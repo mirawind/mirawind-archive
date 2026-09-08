@@ -184,9 +184,7 @@ export function DiagnosticsPanel(props: {
       <ul className="grid gap-3 p-0">
         {visible.map((diagnostic, index) => {
           const severityValue = diagnostic.severity ?? "warning";
-          const targets = diagnostic.targets?.filter(
-            (target) => target.kind !== "reprocess_verbatim",
-          );
+          const targets = diagnostic.targets;
           return (
             <li
               className={`list-none border-l-4 p-4 text-sm ${
@@ -204,7 +202,7 @@ export function DiagnosticsPanel(props: {
                   {targets.map((target) => (
                     <button
                       className={manageQuietButton}
-                      key={`${target.kind}:${"blockId" in target ? target.blockId : "book"}`}
+                      key={`${target.kind}:${target.blockId}`}
                       onClick={() => props.onTarget?.(target, diagnostic)}
                       type="button"
                     >

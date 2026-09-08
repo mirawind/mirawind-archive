@@ -24,6 +24,6 @@ export interface ReaderPageModel {
   readonly pageOwnerHeadingId: string | null;
   readonly previousHref: string | null;
   readonly previewUpdatedAt?: number;
-  readonly previewCandidateId?: string;
+  readonly previewBuildId?: string;
   readonly toc: readonly ReaderTocLink[];
 }

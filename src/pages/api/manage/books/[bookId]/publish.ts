@@ -7,10 +7,7 @@ import { requireRuntimeAdministrator } from "@/http/authorization/runtime-admin"
 import { applyResponsePolicy } from "@/http/cache/policies";
 import { readBoundedJson } from "@/http/json-body";
 import { requireMutationOrigin } from "@/http/origin";
-import {
-  getRuntimeEnvironment,
-  getRuntimeStorageLayout,
-} from "@/composition/storage";
+import { getRuntimeEnvironment } from "@/composition/storage";
 
 export const prerender = false;
 
@@ -45,23 +42,20 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
     !Number.isSafeInteger(command.expected_updated_at) ||
     command.expected_updated_at < 0 ||
     command.expected_updated_at > 8_640_000_000_000_000 ||
-    typeof command.candidate_id !== "string" ||
-    !isOpaqueId("draftCandidate", command.candidate_id)
+    typeof command.build_id !== "string" ||
+    !isOpaqueId("version", command.build_id)
   )
     throw new SafeApplicationError(
       "REQUEST_BODY_INVALID",
       "The publication command is invalid.",
       400,
     );
-  const publishing = createPublicationServer(
-    database,
-    await getRuntimeStorageLayout(),
-  );
-  const published = await publishing.publishCandidate({
+  const publishing = createPublicationServer(database);
+  const published = await publishing.publishBuild({
     actorUserId: session?.user.id ?? null,
     bookId: id,
     expectedUpdatedAt: command.expected_updated_at,
-    candidateId: command.candidate_id,
+    buildId: command.build_id,
     nowMs: Date.now(),
   });
   const headers = new Headers();

@@ -270,7 +270,7 @@ export class LibraryService {
         `SELECT books.id, books.title_cache, books.access,
                 books.alias AS mutable_alias, books.updated_at,
                 books.draft_import_id,
-                books.current_candidate_id, books.current_version_id,
+                books.current_version_id,
                 books.unavailable_reason,
                 presentation.alias, presentation.first_page_id,
                 presentation.first_page_alias,
@@ -294,7 +294,6 @@ export class LibraryService {
       .all(input.afterBookId ?? 0, input.limit + 1) as {
       alias: string | null;
       current_available: 0 | 1;
-      current_candidate_id: string | null;
       first_page_alias: string | null;
       first_page_id: number | null;
       id: number;
@@ -332,7 +331,6 @@ export class LibraryService {
             deletionMutationToken: createBookDeletionToken({
               alias: row.mutable_alias,
               bookId: row.id,
-              currentCandidateId: row.current_candidate_id,
               currentVersionId: row.current_version_id,
               draftImportId: row.draft_import_id,
               title: row.title_cache,

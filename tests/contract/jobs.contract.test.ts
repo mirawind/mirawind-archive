@@ -73,7 +73,7 @@ describe("durable job operation contract", () => {
       required: ["kind", "label"],
     });
     const kinds = at(jobSchema, "properties", "kind").enum;
-    expect(kinds).toEqual(expect.arrayContaining(["build_candidate"]));
+    expect(kinds).toEqual(expect.arrayContaining(["build_book"]));
     expect(kinds).not.toEqual(
       expect.arrayContaining(["build_preview", "build_publish"]),
     );

@@ -4,14 +4,12 @@ import { dirname, relative, resolve, sep } from "node:path";
 import type {
   AnalyzeImportCommand,
   PrepareDraftCommand,
-  SaveDraftCommand,
 } from "@/entrypoints/worker/protocol";
-import type { BuildCandidateCommand } from "@/modules/publishing/application/publishing-api";
-import { handleBuildCandidate } from "@/entrypoints/worker/handlers/build-candidate";
+import type { BuildBookCommand } from "@/modules/publishing/application/publishing-api";
+import { handleBuildBook } from "@/entrypoints/worker/handlers/build-book";
 import { analyzeImport } from "@/modules/publishing/adapters/worker/analyze-import";
-import { buildCandidateVersion } from "@/modules/publishing/adapters/filesystem/build-candidate-version";
+import { buildBookVersion } from "@/modules/publishing/adapters/filesystem/build-book-version";
 import { prepareDraft } from "@/modules/publishing/adapters/worker/prepare-draft";
-import { prepareDraftSave } from "@/modules/publishing/adapters/worker/prepare-draft-save";
 import type { SafeDiagnostic } from "@/domain/errors";
 import { createStorageLayout } from "@/platform/filesystem/storage-layout";
 import { resolveContainedPath } from "@/platform/filesystem/contained-path";
@@ -21,8 +19,8 @@ import {
   type WorkerChildOutcome,
 } from "../job-handler";
 
-export async function buildCandidateHandler(
-  command: BuildCandidateCommand,
+export async function buildBookHandler(
+  command: BuildBookCommand,
   context: WorkerChildContext,
 ): Promise<WorkerChildOutcome> {
   const layout = await createStorageLayout(context.root);
@@ -33,10 +31,10 @@ export async function buildCandidateHandler(
   const analysis = JSON.parse(
     await readFile(resolve(dirname(snapshotPath), "analysis.json"), "utf8"),
   ) as { diagnostics: readonly SafeDiagnostic[] };
-  const artifact = await handleBuildCandidate({
+  const artifact = await handleBuildBook({
     command,
     execute: ({ command: captured, onStage, signal }) =>
-      buildCandidateVersion({
+      buildBookVersion({
         command: captured,
         createdAtMs: Date.now(),
         layout,
@@ -83,7 +81,7 @@ export async function analyzeImportHandler(
       analysisResultRelativePath: relative(context.root, result.artifactPath)
         .split(sep)
         .join("/"),
-      candidates: result.artifact.candidates.length,
+      documents: result.artifact.document ? 1 : 0,
       decision: result.artifact.decision,
       entries: result.entries,
       files: result.files,
@@ -115,7 +113,7 @@ export async function prepareDraftHandler(
       dirname(archivePath),
       "sealed-extraction",
     ),
-    selectedCandidatePath: command.selectedCandidateRelativePath,
+    sourcePath: command.sourceRelativePath,
     signal: context.signal,
     stagingDirectory,
   });
@@ -127,27 +125,4 @@ export async function prepareDraftHandler(
         .join("/"),
     }),
   });
-}
-
-export async function saveDraftHandler(
-  command: SaveDraftCommand,
-  context: WorkerChildContext,
-): Promise<WorkerChildOutcome> {
-  const result = await prepareDraftSave({
-    root: context.root,
-    bookId: command.bookId,
-    requestPath: await resolveContainedPath(
-      context.root,
-      command.requestRelativePath,
-    ),
-    stagingDirectory: await resolveContainedPath(
-      context.root,
-      command.stagingRelativePath,
-    ),
-    signal: context.signal,
-    onPhase(phase, completed, total) {
-      context.reportProgress(phase, stepProgress(completed, total));
-    },
-  });
-  return { ok: true, result };
 }

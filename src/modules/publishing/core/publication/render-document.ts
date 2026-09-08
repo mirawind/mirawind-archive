@@ -211,7 +211,12 @@ function rendererTree(options: RenderSemanticDocumentOptions): TreeNode {
       };
     }
 
-    if (node.type === "image") {
+    if (
+      node.type === "image" ||
+      (node.type === "link" &&
+        node.url &&
+        resourceIdByOriginalUrl.has(node.url))
+    ) {
       const resourceId = node.url
         ? resourceIdByOriginalUrl.get(node.url)
         : undefined;

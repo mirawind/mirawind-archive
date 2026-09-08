@@ -21,18 +21,14 @@ import {
 import { maximumCoverUploadBytes } from "./cover-upload-policy";
 import { m1PublishPolicy } from "./publish-policy";
 import {
-  candidateBuildIdentities,
-  candidateBuildPhases,
-  parseBuildCandidateCommand,
-  parseCandidateBuildArtifact,
-} from "./commands/build-candidate";
-import { finalizeCandidate } from "./commands/finalize-candidate";
-import { publishCandidate } from "./commands/publish-candidate";
+  buildIdentities,
+  buildPhases,
+  parseBuildBookCommand,
+  parseBuildArtifact,
+} from "./commands/build-book";
+import { finalizeBuild } from "./commands/finalize-build";
+import { publishBuild } from "./commands/publish-build";
 import { deriveBookVersionPresentation } from "./derive-book-version-presentation";
-import {
-  currentDraftCandidateStates,
-  getCurrentDraftCandidate,
-} from "./queries/get-draft";
 
 export type {
   HeadingNumberingMode,
@@ -53,31 +49,25 @@ export type {
   QueueObservation,
 } from "./job-state";
 export type {
-  BuildCandidateCommand,
-  CandidateBuildPhase,
-  CandidateBuildStageUpdate,
-  CandidateBuildArtifact,
-} from "./commands/build-candidate";
-export type { CandidateRegistrationPort } from "./commands/finalize-candidate";
+  BuildBookCommand,
+  BuildPhase,
+  BuildStageUpdate,
+  BuildArtifact,
+} from "./commands/build-book";
+export type { BuildRegistrationPort } from "./commands/finalize-build";
 export type {
-  CandidatePublicationCapture,
-  CandidatePublicationPort,
-  PublishedCandidate,
-} from "./commands/publish-candidate";
-export type {
-  CurrentDraftCandidateProjection,
-  CurrentDraftCandidateRecord,
-  CurrentDraftCandidateState,
-} from "./queries/get-draft";
+  BuildPublicationCapture,
+  BuildPublicationPort,
+  PublishedBuild,
+} from "./commands/publish-build";
+export type { BuildView } from "./draft-view";
 
 export {
-  candidateBuildIdentities,
-  candidateBuildPhases,
-  currentDraftCandidateStates,
+  buildIdentities,
+  buildPhases,
   deriveBookVersionPresentation,
   evaluateJobRetry,
-  finalizeCandidate,
-  getCurrentDraftCandidate,
+  finalizeBuild,
   importUploadIdempotencyOperation,
   assertJobProgressUpdate,
   isJobPhase,
@@ -89,9 +79,9 @@ export {
   m1PublishPolicy,
   maximumCoverUploadBytes,
   maximumUploadBytes,
-  parseBuildCandidateCommand,
-  parseCandidateBuildArtifact,
-  publishCandidate,
+  parseBuildBookCommand,
+  parseBuildArtifact,
+  publishBuild,
   canonicalJson,
   parseReaderManifestProjection,
   publishingReaderRendererAssets,

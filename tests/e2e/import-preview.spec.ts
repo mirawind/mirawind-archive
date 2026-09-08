@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import Database from "better-sqlite3";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { e2eDataRoot, e2eFixtureRoot } from "../helpers/global-setup";
@@ -34,29 +34,34 @@ test("imports MinerU v2 into one editable book and rejects missing or multiple b
   const imported = (await (
     await page.request.get(`/api/manage/imports/${accepted.import_id}`)
   ).json()) as { book_id: number };
-  const book = JSON.parse(
-    await readFile(
-      resolve(
-        e2eDataRoot,
-        "books",
-        String(imported.book_id),
-        "draft/book.json",
-      ),
-      "utf8",
-    ),
-  );
-  expect(book).toMatchObject({
-    schema_version: 1,
-    book_id: imported.book_id,
-    updated_at: expect.any(Number),
-    metadata: { title: "E2E Cloud Book" },
+  const storage = new Database(resolve(e2eDataRoot, "db/mirawind.sqlite"), {
+    readonly: true,
   });
-  expect(
-    book.blocks.some(
-      (block: { type: string; content?: unknown }) =>
-        block.type === "paragraph",
-    ),
-  ).toBe(true);
+  try {
+    expect(
+      storage
+        .prepare(
+          "SELECT book_id,schema_version,updated_at,json_extract(metadata_json,'$.title') AS title FROM book_documents WHERE book_id=?",
+        )
+        .get(imported.book_id),
+    ).toMatchObject({
+      book_id: imported.book_id,
+      schema_version: 1,
+      updated_at: expect.any(Number),
+      title: "E2E Cloud Book",
+    });
+    expect(
+      (
+        storage
+          .prepare(
+            "SELECT count(*) AS count FROM book_blocks WHERE book_id=? AND type='paragraph'",
+          )
+          .get(imported.book_id) as { count: number }
+      ).count,
+    ).toBeGreaterThan(0);
+  } finally {
+    storage.close();
+  }
   for (const [filename, error] of [
     ["generic.zip", "IMPORT_MINERU_JSON_MISSING"],
     ["ambiguous.zip", "IMPORT_MULTIPLE_BOOKS"],

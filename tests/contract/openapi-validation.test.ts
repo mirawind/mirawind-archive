@@ -144,7 +144,7 @@ describe("generated OpenAPI validation", () => {
     for (const contractRoute of [
       "/books/{bookKey}/assets/{versionId}/{resourceId}",
       "/books/{bookKey}/originals/{fileId}",
-      "/api/manage/books/{bookId}/preview/{candidateId}/assets/{resourceId}",
+      "/api/manage/books/{bookId}/preview/{buildId}/assets/{resourceId}",
     ]) {
       const operation = objectValue(
         objectValue(paths[contractRoute], contractRoute).get,

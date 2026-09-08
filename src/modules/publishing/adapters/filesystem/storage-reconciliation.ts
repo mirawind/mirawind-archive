@@ -1,7 +1,5 @@
 import { chmod, lstat, mkdir, readdir, rename } from "node:fs/promises";
 import { posix, relative, resolve, sep } from "node:path";
-import { readDraftHeader } from "./draft-document";
-import { retainedDraftSaveFiles } from "./draft-save-retention";
 
 import type Database from "better-sqlite3";
 
@@ -137,12 +135,12 @@ async function quarantineOrphanVersions(input: {
     const versionsDirectory = resolve(
       input.layout.bookDirectory,
       book.name,
-      "versions",
+      "builds",
     );
     if (!(await existsAsDirectory(versionsDirectory))) continue;
     const entries = await readdir(versionsDirectory, { withFileTypes: true });
     for (const entry of entries) {
-      const relativePath = `books/${book.name}/versions/${entry.name}`;
+      const relativePath = `books/${book.name}/builds/${entry.name}`;
       if (
         known.has(relativePath) &&
         entry.isDirectory() &&
@@ -185,7 +183,7 @@ async function markMissingDatabaseVersions(input: {
       )
       .get(version.bookId);
     if (!active) continue;
-    const expected = `books/${version.bookId}/versions/${version.id}`;
+    const expected = `books/${version.bookId}/builds/${version.id}`;
     if (
       version.versionRelativePath !== expected ||
       !(await existsAsDirectory(resolve(input.layout.root, expected)))
@@ -264,14 +262,6 @@ async function reconcileDraftOrphans(input: {
   readonly layout: StorageLayout;
   readonly removed: string[];
 }): Promise<void> {
-  const retained = retainedDraftSaveFiles(input.database, input.layout);
-  const covers = resolve(input.layout.temporaryDirectory, "covers");
-  if (await existsAsDirectory(covers)) {
-    for (const entry of await readdir(covers)) {
-      if (!retained.covers.has(`tmp/covers/${entry}`))
-        await removeAgedOrphan({ ...input, path: resolve(covers, entry) });
-    }
-  }
   const originals = new Set(
     (
       input.database
@@ -285,15 +275,6 @@ async function reconcileDraftOrphans(input: {
         .prepare("SELECT storage_rel_path FROM book_resources")
         .all() as { storage_rel_path: string }[]
     ).map((row) => row.storage_rel_path),
-  );
-  const activeInputs = new Set(
-    (
-      input.database
-        .prepare(
-          "SELECT captured_input_path FROM jobs WHERE state IN ('queued','running') AND kind='build_candidate' AND captured_input_path IS NOT NULL",
-        )
-        .all() as { captured_input_path: string }[]
-    ).map((row) => posix.dirname(row.captured_input_path)),
   );
   for (const book of await readdir(input.layout.bookDirectory, {
     withFileTypes: true,
@@ -314,38 +295,6 @@ async function reconcileDraftOrphans(input: {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         const path = "books/" + book.name + "/" + name + "/" + entry.name;
         if (known.has(path) && entry.isFile() && !entry.isSymbolicLink())
-          continue;
-        await removeAgedOrphan({
-          ...input,
-          path: resolve(directory, entry.name),
-        });
-      }
-    }
-    const draft = resolve(root, "draft");
-    if (!(await existsAsDirectory(draft))) continue;
-    let updatedAt: number;
-    try {
-      updatedAt = readDraftHeader(
-        resolve(draft, "book.json"),
-        Number(book.name),
-      ).updated_at;
-    } catch {
-      continue;
-    }
-    for (const name of ["views", "candidates", "saves"]) {
-      const directory = resolve(draft, name);
-      if (!(await existsAsDirectory(directory))) continue;
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
-        const path = "books/" + book.name + "/draft/" + name + "/" + entry.name;
-        if (
-          !entry.isSymbolicLink() &&
-          entry.isDirectory() &&
-          (name === "views"
-            ? entry.name === String(updatedAt)
-            : name === "saves"
-              ? retained.receipts.has(path)
-              : activeInputs.has(path))
-        )
           continue;
         await removeAgedOrphan({
           ...input,

@@ -92,7 +92,7 @@ test("keeps upload progress honest across retry, acceptance and abort", async ({
             error_class: null,
             error_code: null,
             job_id: "job_controlled_candidate_0001",
-            kind: ready ? "build_candidate" : "analyze_import",
+            kind: ready ? "build_book" : "analyze_import",
             phase: ready ? "complete" : "identify_document",
             progress: {
               completed: 1,

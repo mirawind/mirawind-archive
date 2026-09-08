@@ -1,6 +1,6 @@
 import type { SafeDiagnostic } from "@/domain/errors";
 import type {
-  CurrentDraftCandidateProjection,
+  BuildView,
   HeadingNumberingMode,
 } from "@/modules/publishing/application/publishing-api";
 
@@ -32,16 +32,15 @@ export interface DraftView {
     readonly body_start_block_id: string;
   };
   readonly book_id: number;
-  readonly candidate: CurrentDraftCandidateProjection | null;
-  readonly candidate_published: boolean;
+  readonly build: BuildView | null;
+  readonly build_published: boolean;
   readonly updated_at: number;
-  readonly pending_save: boolean;
   readonly diagnostics: readonly PreviewDiagnostic[];
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly numbering: HeadingNumberingMode;
   readonly published: boolean;
   readonly preview: {
-    readonly candidate_id: string;
+    readonly build_id: string;
     readonly boundaries: DraftView["boundaries"];
     readonly compiler_version: string;
     readonly source_updated_at: number;

@@ -5,7 +5,6 @@ export interface BookRecord {
   readonly access: BookAccess;
   readonly alias: string | null;
   readonly createdAtMs: number;
-  readonly currentCandidateId: string | null;
   readonly currentVersionId: string | null;
   readonly draftImportId: string | null;
   readonly id: number;
@@ -17,7 +16,6 @@ interface BookRow {
   access: BookAccess;
   alias: string | null;
   created_at: number;
-  current_candidate_id: string | null;
   current_version_id: string | null;
   draft_import_id: string | null;
   id: number;
@@ -49,7 +47,6 @@ export class DraftRepository {
           access: row.access,
           alias: row.alias,
           createdAtMs: row.created_at,
-          currentCandidateId: row.current_candidate_id,
           currentVersionId: row.current_version_id,
           draftImportId: row.draft_import_id,
           id: row.id,

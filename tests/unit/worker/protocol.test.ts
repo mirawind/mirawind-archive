@@ -78,9 +78,8 @@ describe("job child IPC protocol", () => {
     };
     const registry = {
       analyze_import: handler,
-      build_candidate: handler,
+      build_book: handler,
       prepare_draft: handler,
-      save_draft: handler,
       purge_book: handler,
     } satisfies JobCommandRegistry<string>;
     const jobId = createOpaqueId("job");
@@ -132,24 +131,23 @@ describe("job child IPC protocol", () => {
 
   it("requires the complete immutable candidate build capture", () => {
     const bookId = 1;
-    const candidateId = createOpaqueId("draftCandidate");
     const jobId = createOpaqueId("job");
     const importId = createOpaqueId("import");
     const versionId = createOpaqueId("version");
     const message = {
       input: {
+        reuse: null,
         bookId,
-        candidateId,
         capturedCurrentVersionId: null,
-        compilerIdentity: "compiler-v7",
-        inputRelativePath: `books/${bookId}/draft/candidates/${candidateId}/book.json`,
+        compilerIdentity: "compiler-v8",
+        inputRelativePath: `staging/${jobId}/input/book.json`,
         documentSha256: "a".repeat(64),
         sourceUpdatedAt: 2000,
         jobId,
-        kind: "build_candidate",
-        previewIdentity: "draft-preview-v7",
-        readerIdentity: "mirawind-reader-v4-tailwind-4.3.3",
-        rendererIdentity: "semantic-html-v7-katex-0.18.1",
+        kind: "build_book",
+        previewIdentity: "draft-preview-v8",
+        readerIdentity: "mirawind-reader-v5-tailwind-4.3.3",
+        rendererIdentity: "semantic-html-v8-katex-0.18.1",
         importId,
         resourceRootRelativePath: `books/${bookId}`,
         versionId,

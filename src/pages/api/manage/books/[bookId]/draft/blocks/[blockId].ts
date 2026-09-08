@@ -1,10 +1,10 @@
 import type { APIRoute } from "astro";
 
-import { publishingDraftActions } from "@/composition/server/publishing-drafts";
 import {
-  getRuntimeEnvironment,
-  getRuntimeStorageLayout,
-} from "@/composition/storage";
+  createPublishingDraftServer,
+  publishingDraftActions,
+} from "@/composition/server/publishing-drafts";
+import { getRuntimeEnvironment } from "@/composition/storage";
 import { SafeApplicationError } from "@/domain/errors";
 import { isOpaqueId } from "@/domain/ids";
 import { requireRuntimeAdministrator } from "@/http/authorization/runtime-admin";
@@ -39,11 +39,10 @@ export const GET: APIRoute = async ({ locals, params }) => {
     hideExistence: true,
   });
   const target = identity(params);
-  const result = await publishingDraftActions.getDraftBlock({
-    ...target,
-    database,
-    layout: await getRuntimeStorageLayout(),
-  });
+  const result = createPublishingDraftServer(database).getDraftBlock(
+    target.bookId,
+    target.blockId,
+  );
   const headers = new Headers();
   applyResponsePolicy(headers, "private-api");
   return Response.json(
@@ -83,18 +82,18 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
       "A block edit is required.",
       400,
     );
-  const result = publishingDraftActions.patchDraftBlock({
-    ...target,
+  const result = publishingDraftActions.saveDocument({
+    bookId: target.bookId,
     database,
     expectedUpdatedAt: value.expected_updated_at,
-    markdown: value.markdown,
-    layout: await getRuntimeStorageLayout(),
+    patch: { block: { block_id: target.blockId, markdown: value.markdown } },
+    requestId: request.headers.get("Idempotency-Key") ?? "",
     nowMs: Date.now(),
   });
   const headers = new Headers();
   applyResponsePolicy(headers, "private-api");
   return Response.json(
     { ...result, selected_block_id: target.blockId },
-    { headers, status: 202 },
+    { headers, status: 200 },
   );
 };

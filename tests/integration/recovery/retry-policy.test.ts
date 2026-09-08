@@ -1,3 +1,4 @@
+import { required } from "../../helpers/required";
 import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -7,13 +8,8 @@ import {
   JobRepository,
   type JobRecord,
 } from "@/modules/publishing/adapters/sqlite/jobs";
-import {
-  retryCandidateBuild,
-  terminalizeCandidateBuild,
-} from "@/modules/publishing/application/commands/maintain-candidate-build";
 import { recoverExpiredJobLeases } from "@/modules/publishing/application/recover-expired-jobs";
 import { evaluateJobRetry } from "@/modules/publishing/application/retry-policy";
-import { withImmediateTransaction } from "@/platform/sqlite/immediate-transaction";
 import { withMigratedTestDatabase } from "../../helpers/database";
 import { setupPublicationFixture } from "../../helpers/publication";
 
@@ -22,7 +18,6 @@ function terminalJob(overrides: Partial<JobRecord> = {}): JobRecord {
     attempt: 1,
     automaticRetryCount: 0,
     bookId: 42,
-    candidateId: null,
     capturedSourceUpdatedAt: 1000,
     capturedCurrentVersionId: null,
     capturedInputPath: null,
@@ -204,184 +199,75 @@ describe("job retry policy", () => {
     ).toMatchObject({ allowed: false });
   });
 
-  it("retries a failed candidate with new job, candidate, and version identities", () =>
+  it("retries a failed build without introducing a second artifact identity", () =>
     withMigratedTestDatabase(({ database }) => {
       const fixture = setupPublicationFixture(database, {
         registerReady: false,
       });
-      fixture.jobs.heartbeat({
+      const failed = fixture.jobs.completeFailure({
         jobId: fixture.candidateJob.id,
         leaseOwner: "worker:test",
-        nowMs: 7,
-        phase: "render_pages",
-        progress: {
-          completed: 12,
-          processed_bytes: 4_096,
-          total: 30,
-          unit: "pages",
-        },
+        nowMs: 8,
+        errorClass: "timeout",
+        errorCode: "JOB_TIMEOUT",
       });
-      const failed = withImmediateTransaction(database, () => {
-        const completed = fixture.jobs.completeFailure({
-          errorClass: "timeout",
-          errorCode: "JOB_TIMEOUT",
-          jobId: fixture.candidateJob.id,
-          leaseOwner: "worker:test",
-          nowMs: 8,
-        });
-        terminalizeCandidateBuild({
-          candidates: fixture.candidates,
-          job: completed,
-          nowMs: 8,
-          safeErrorCode: "JOB_TIMEOUT",
-          state: "failed",
-        });
-        return completed;
-      });
-      const originalCandidate = fixture.candidates.require(
-        fixture.candidate.attemptId,
-      );
-
-      const retry = retryCandidateBuild({
+      const retry = fixture.candidates.retry(failed, {
         automatic: false,
-        candidates: fixture.candidates,
-        job: failed,
-        jobs: fixture.jobs,
         nowMs: 9,
-        runAtomically: (operation) =>
-          withImmediateTransaction(database, operation),
-      });
-      if (!retry.candidateId || !retry.versionId) {
-        throw new Error("CANDIDATE_RETRY_IDENTITIES_MISSING");
-      }
-      const retryCandidate = fixture.candidates.require(retry.candidateId);
-
-      expect(failed).toMatchObject({
-        progress: {
-          completed: 12,
-          processed_bytes: 4_096,
-          total: 30,
-          unit: "pages",
-        },
-        state: "failed",
-        versionId: fixture.candidateJob.versionId,
-      });
-      expect(originalCandidate).toMatchObject({
-        attemptId: fixture.candidate.attemptId,
-        safeErrorCode: "JOB_TIMEOUT",
-        state: "failed",
-        versionId: null,
       });
       expect(retry).toMatchObject({
-        attempt: 2,
-        candidateId: retryCandidate.attemptId,
-        retryOfJobId: failed.id,
         state: "queued",
+        attempt: 2,
+        retryOfJobId: failed.id,
       });
       expect(retry.id).not.toBe(failed.id);
-      expect(retry.candidateId).not.toBe(failed.candidateId);
       expect(retry.versionId).not.toBe(failed.versionId);
-      expect(retryCandidate).toMatchObject({
-        jobId: retry.id,
-        state: "building",
-        versionId: null,
-      });
+      expect(fixture.candidates.require(required(failed.versionId)).state).toBe(
+        "failed",
+      );
+      expect(fixture.candidates.findCurrent(fixture.book.id)?.id).toBe(
+        retry.versionId,
+      );
+      fixture.jobs.claimNext({ leaseOwner: "test", nowMs: 10 });
       expect(
-        fixture.drafts.requireBook(fixture.book.id).currentCandidateId,
-      ).toBe(retry.candidateId);
-      expect(fixture.candidates.buildCommand(retry.candidateId)).toMatchObject({
-        candidateId: retry.candidateId,
-        jobId: retry.id,
+        fixture.candidates.buildCommand(required(retry.versionId)),
+      ).toMatchObject({
         versionId: retry.versionId,
-      });
-      const canceled = withImmediateTransaction(database, () => {
-        const completed = fixture.jobs.requestCancellation(retry.id, 10);
-        terminalizeCandidateBuild({
-          candidates: fixture.candidates,
-          job: completed,
-          nowMs: 10,
-          safeErrorCode: "JOB_CANCELED",
-          state: "canceled",
-        });
-        return completed;
-      });
-      expect(canceled).toMatchObject({
-        cancellationRequestedAtMs: 10,
-        errorCode: "JOB_CANCELED",
-        state: "canceled",
-      });
-      expect(fixture.candidates.require(retry.candidateId)).toMatchObject({
-        safeErrorCode: "JOB_CANCELED",
-        state: "canceled",
+        jobId: retry.id,
+        sourceUpdatedAt: fixture.document.updated_at,
       });
     }));
-
-  it("terminalizes an expired candidate before creating its one automatic retry", async () => {
-    await withMigratedTestDatabase(async ({ database }, dataRoot) => {
+  it("recovers an expired build and preserves its single automatic retry limit", () =>
+    withMigratedTestDatabase(async ({ database }, dataRoot) => {
       const fixture = setupPublicationFixture(database, {
         registerReady: false,
       });
-      fixture.jobs.heartbeat({
-        jobId: fixture.candidateJob.id,
-        leaseOwner: "worker:test",
-        nowMs: 10,
-        phase: "render_pages",
-        progress: {
-          completed: 4,
-          processed_bytes: null,
-          total: 20,
-          unit: "pages",
-        },
-      });
-
       const recovered = await recoverExpiredJobLeases({
-        nowMs: 60_011,
-        onInterrupted: (job) =>
-          terminalizeCandidateBuild({
-            candidates: fixture.candidates,
-            job,
-            nowMs: 60_011,
-            safeErrorCode: "JOB_LEASE_EXPIRED",
-            state: "interrupted",
-          }),
+        nowMs: 60010,
         repository: fixture.jobs,
-        retryJob: (job, nowMs) =>
-          retryCandidateBuild({
-            automatic: true,
-            candidates: fixture.candidates,
-            job,
-            jobs: fixture.jobs,
-            nowMs,
-            runAtomically: (operation) =>
-              withImmediateTransaction(database, operation),
-          }),
         storageRoot: dataRoot.path,
+        retryJob: (job, nowMs) =>
+          fixture.candidates.retry(job, { automatic: true, nowMs }),
       });
       const retry = recovered[0]?.retry;
-      if (!retry?.candidateId) throw new Error("CANDIDATE_RETRY_MISSING");
-
-      expect(recovered[0]?.interrupted).toMatchObject({
-        errorCode: "JOB_LEASE_EXPIRED",
-        progress: { completed: 4, total: 20, unit: "pages" },
-        state: "interrupted",
-      });
-      expect(
-        fixture.candidates.require(fixture.candidate.attemptId),
-      ).toMatchObject({
-        safeErrorCode: "JOB_LEASE_EXPIRED",
-        state: "interrupted",
-      });
       expect(retry).toMatchObject({
         attempt: 2,
         automaticRetryCount: 1,
-        retryOfJobId: fixture.candidateJob.id,
         state: "queued",
+        retryOfJobId: fixture.candidateJob.id,
       });
-      expect(retry.candidateId).not.toBe(fixture.candidate.attemptId);
-      expect(fixture.candidates.require(retry.candidateId)).toMatchObject({
-        jobId: retry.id,
-        state: "building",
+      expect(fixture.candidates.require(fixture.build.id).state).toBe(
+        "interrupted",
+      );
+      fixture.jobs.claimNext({ leaseOwner: "test", nowMs: 60011 });
+      const again = await recoverExpiredJobLeases({
+        nowMs: 120012,
+        repository: fixture.jobs,
+        storageRoot: dataRoot.path,
+        retryJob: (job, nowMs) =>
+          fixture.candidates.retry(job, { automatic: true, nowMs }),
       });
-    });
-  });
+      expect(again).toHaveLength(1);
+      expect(again[0]?.retry).toBeNull();
+    }));
 });

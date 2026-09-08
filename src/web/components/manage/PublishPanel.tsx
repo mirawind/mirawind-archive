@@ -6,10 +6,10 @@ import { managePrimaryButton } from "../ui/manage-classes";
 export function PublishPanel(props: {
   readonly blocked?: boolean;
   readonly bookId: number;
-  readonly candidatePublished: boolean;
+  readonly buildPublished: boolean;
   readonly compact?: boolean;
   readonly updatedAt: number;
-  readonly candidateId: string | null;
+  readonly buildId: string | null;
   readonly onPublished: () => Promise<void>;
   readonly previewReady: boolean;
   readonly previewStale: boolean;
@@ -26,7 +26,7 @@ export function PublishPanel(props: {
         {
           body: JSON.stringify({
             expected_updated_at: props.updatedAt,
-            candidate_id: props.candidateId,
+            build_id: props.buildId,
           }),
           cache: "no-store",
           credentials: "same-origin",
@@ -56,14 +56,14 @@ export function PublishPanel(props: {
 
   const canPublish =
     props.previewReady &&
-    Boolean(props.candidateId) &&
+    Boolean(props.buildId) &&
     !props.previewStale &&
     !props.blocked &&
     !submitting &&
-    !props.candidatePublished;
+    !props.buildPublished;
   const publishLabel = submitting
     ? "正在发布"
-    : props.candidatePublished
+    : props.buildPublished
       ? "已发布"
       : "发布当前预览";
 
@@ -89,7 +89,7 @@ export function PublishPanel(props: {
           {publishLabel}
         </span>
       </button>
-      {props.candidatePublished && (
+      {props.buildPublished && (
         <a
           className="font-semibold text-emerald-800 hover:text-emerald-900"
           href={`/read/${props.bookId}`}

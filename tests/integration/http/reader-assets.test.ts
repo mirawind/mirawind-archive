@@ -8,7 +8,7 @@ import {
   OPTIONS,
 } from "../../../src/pages/reader-assets/[...assetPath].js";
 
-const stylesheet = "renderers/semantic-html-v7-katex-0.18.1/katex.css";
+const stylesheet = "renderers/semantic-html-v8-katex-0.18.1/katex.css";
 
 describe("versioned reader asset responses", () => {
   it("serves current assets with immutable cross-origin GET and HEAD policy", async () => {

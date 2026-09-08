@@ -4,14 +4,13 @@ import type Database from "better-sqlite3";
 import { createOpaqueId } from "@/domain/ids";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
-import { serializeBookDocument } from "@/modules/publishing/core/content/book-document";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
+import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
 import type {
   BookDocument,
   HeadingBlock,
   ParagraphBlock,
 } from "@/modules/publishing/core/content/book-document.generated";
-import { writeDraftViews } from "@/modules/publishing/adapters/filesystem/draft-views";
 import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 import { mineruZip, mineruTitle, mineruParagraph } from "./mineru-v2";
@@ -93,24 +92,15 @@ export async function installIrDraft(
   database
     .prepare("UPDATE imports SET state='draft_ready' WHERE id=?")
     .run(imported.id);
-  const draft = resolve(layout.bookDirectory, String(book.book_id), "draft");
-  const json = serializeBookDocument(book);
-  const digest = createHash("sha256").update(json).digest("hex");
-  await atomicWriteFile(resolve(draft, "book.json"), json, { mode: 0o600 });
-  await writeDraftViews(book, draft);
+  new DocumentRepository(database).insert(book);
   await atomicWriteFile(
-    resolve(draft, "views", String(book.updated_at), "analysis.json"),
+    resolve(layout.bookDirectory, String(book.book_id), "import/analysis.json"),
     JSON.stringify({ origins: [], diagnostics: [] }),
     { mode: 0o600 },
   );
-  await atomicWriteFile(
-    resolve(draft, "import-artifact.json"),
-    JSON.stringify({
-      sourceUpdatedAt: book.updated_at,
-      documentSha256: digest,
-    }),
-    { mode: 0o600 },
-  );
+  database
+    .prepare("UPDATE books SET draft_import_id=? WHERE id=?")
+    .run(imported.id, book.book_id);
   const originalId = createOpaqueId("file");
   const originalPath = `originals/${originalId}`;
   await atomicWriteFile(
@@ -130,28 +120,11 @@ export async function installIrDraft(
       archive.byteLength,
       archiveHash,
     );
-  await atomicWriteFile(
-    resolve(draft, "import.json"),
-    JSON.stringify({
-      import_id: imported.id,
-      files: [
-        {
-          id: originalId,
-          filename: "book.zip",
-          media_type: "application/zip",
-          path: originalPath,
-          size: archive.byteLength,
-          sha256: archiveHash,
-        },
-      ],
-    }),
-    { mode: 0o600 },
-  );
-  const candidate = new DraftCandidateRepository(database).createForDocument({
+  const candidate = new BuildRepository(database).createForDocument({
     bookId: book.book_id,
     importId: imported.id,
     sourceUpdatedAt: book.updated_at,
     nowMs: 2,
   });
-  return { book, imported, candidate, draft };
+  return { book, imported, build: candidate };
 }

@@ -34,6 +34,9 @@ export interface RenderedPage {
 export type PageRenderer = (
   input: RenderPageInput,
 ) => Promise<SemanticRenderResult>;
+export type PageReuse = (
+  input: RenderPageInput,
+) => Promise<SemanticRenderResult | null>;
 
 type RenderSettlement =
   | { readonly ok: true; readonly value: RenderedPage }
@@ -50,6 +53,7 @@ function throwIfCancelled(signal: AbortSignal | undefined): void {
 export async function* renderPages(input: {
   readonly book: CompiledBook;
   readonly renderPage?: PageRenderer;
+  readonly reusePage?: PageReuse;
   readonly resourceResolution: ResourceResolution;
   readonly signal?: AbortSignal;
 }): AsyncIterable<RenderedPage> {
@@ -77,7 +81,7 @@ export async function* renderPages(input: {
         const routeLinks = createRouteNeutralLinkScope(
           `${input.book.identity.semantic_digest.slice(0, 64)}-${page.pageId}`,
         );
-        const rendered = await renderer({
+        const options: RenderPageInput = {
           document: documentForPage(input.book, page),
           blockHref: routeLinks.blockHref,
           blockLinkIndex: input.book.blockLinkIndex,
@@ -85,7 +89,9 @@ export async function* renderPages(input: {
           page,
           publishedResourceUrl: routeLinks.resourceUrl,
           resourceResolution: input.resourceResolution,
-        });
+        };
+        const reused = await input.reusePage?.(options);
+        const rendered = reused ?? (await renderer(options));
         throwIfCancelled(input.signal);
         return Object.freeze({
           css: rendered.css,

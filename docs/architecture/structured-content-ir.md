@@ -1,139 +1,64 @@
-# 单一 MinerU JSON 入口的结构化正文 IR
+# Structured Content IR
 
-- 日期：2026-09-07
-- 权威：宪法 4.1.1、D-136 至 D-139。
-- 状态：运行时切换及本地功能、内容、安全和阅读性能验收已完成；证据见 `docs/operations/content-refactor-acceptance.md`。
-- 版本：正文 IR v1、manifest v4、完整性标记 v4、数据库基线 `mirawind-content-ir-v1`。
+Authority: constitution 5.1.0, D-138, D-140 and D-141. Runtime storage and transaction boundaries
+are specified in [Block Storage](block-storage.md). Earlier mutable-file drafts and independent
+candidate records are retired, not compatibility requirements.
 
-## 1. 唯一正文权威
+## Logical Document
 
-`books/<bookId>/draft/book.json` 是可修改的工作稿，包含 `schema_version`、`book_id`、
-`updated_at`、可选 `alias`、元数据、出版设置、有序正文块和资源登记。标题就是正文块，
-不再保存第二棵可编辑目录树。不持久化整篇 Markdown、正文偏移、块指纹或预处理哈希链。
+IR v1 represents a book with schema version, book ID, the sole content timestamp, metadata,
+optional alias, publishing settings, ordered blocks and resource references. The JSON Schema
+generates TypeScript types; Publishing owns semantic validation and edits.
 
-JSON Schema 定义在 `docs/schemas/book.schema.json`；`pnpm generate:content-types` 生成
-Publishing 的 TypeScript 类型。Publishing core 集中拥有语义校验、编辑和标题计算。
-不增加独立格式适配器、注册表、旧数据转换器、双写或格式 fallback。
+The working document lives in SQLite: book_documents owns its header, book_blocks owns ordered
+top-level block JSON, and book_nodes indexes nested identities to their owning root. No mutable
+book.json, Markdown body, NDJSON editor view or file-based save receipt is maintained. A frozen
+book.json is generated only for a build and retained with the resulting immutable artifact.
 
-| 数据                                   | 位置与修改边界                                              |
-| -------------------------------------- | ----------------------------------------------------------- |
-| 正文、标题、元数据、出版设置、资源引用 | 工作稿 `book.json`，一次原子替换                            |
-| 私密/公开、任务、候选与发布指针        | SQLite WAL，短事务                                          |
-| 图片等二进制资源                       | `books/<id>/assets/`，不可覆盖已引用文件                    |
-| 原始 ZIP                               | `books/<id>/originals/`，不可修改，受服务端授权             |
-| 来源位置、目录恢复和清理证据           | 私有导入证据、时间戳视图的 `analysis.json`                  |
-| 编辑查询投影                           | `draft/views/<updated_at>/`，由工作稿派生                   |
-| 构建输入                               | `draft/candidates/<candidateId>/`，固定正文及资源完整性记录 |
-| Reader、导航、搜索、资源映射           | 不可变版本目录，不能成为另一份编辑权威                      |
-| 私人笔记                               | 与正文独立；本轮不实现笔记编辑                              |
+## Blocks And References
 
-权限和笔记状态不更新正文时间。草稿与已发布状态由发布指针表达，不与 `private | public`
-混成一个正文枚举。导入元数据不能授予公开权限，新书始终私密。
+Blocks cover headings, paragraphs, lists/items, quotes, code, math, images, structured tables,
+footnotes, dividers and textbook containers. Inline nodes cover formatting, links, math, code,
+images, breaks and footnote references. Nested structure and captions remain typed; no arbitrary
+JSON or HTML body field is supported.
 
-## 2. 正文与标题
+Opaque block IDs remain stable under ordinary edits. New nodes get new IDs. Order is independent
+of identity. Table cells and nested lists stay within their root block rather than becoming an
+unbounded forest of tiny database records.
 
-闭合块类型覆盖标题、段落、列表及列表项、引用、代码、独立公式、图片、结构化表格、脚注、
-分隔线和教材容器。支持嵌套内容、图表题注与注释，以及强调、粗体、删除线、上下标、
-下划线、链接、行内代码/公式/图片、换行与脚注引用。不允许任意 JSON 或 HTML 透传字段。
+A heading stores level, inline content, optional source_number, include_in_toc, starts_page and
+exclude_from_numbering. Numbering, role, navigation and page plans are derived. Numbering modes
+are source/generated/none; excluding a heading excludes its entire deeper subtree from numbering
+and counters until the next same-or-higher heading. Source numbers are preserved.
 
-每个可引用节点使用既有 opaque ID 生成器。普通编辑保留现有 ID，新增节点分配新 ID，
-不从文本、标题、页码或数组下标派生身份。
+## Import
 
-标题保存 `level`、行内 `content`、可选 `source_number`、`include_in_toc`、`starts_page`
-及 `exclude_from_numbering`。层级、目录可见性、拆页和编号彼此独立。
+Only one MinerU content-list v2 JSON document is accepted per ZIP. Import assumes a good-faith
+administrator under D-140. zip.js parses the archive; ordinary errors and cancellation clean
+incomplete work. Upload/JSON budgets, schema validation and filesystem containment remain.
 
-整书 `publishing.numbering` 为 `source | generated | none`。排除标题自身及到下一同级或
-更高标题之前的子树在三种模式下均不编号、不消耗计数。子标题不能覆盖祖先排除；源编号
-仍然保存，解除排除后恢复。显示期不猜测删除标题文本中的数字。
+MinerU JSON directly creates IR, without a whole-book Markdown intermediate. parse5 converts
+table/inline markup into structured nodes. Printed-contents recovery, duplicate cleanup and
+Chinese typography run at import. Original ZIP and private source analysis are stored once.
+Fresh uploads create fresh books; there is no old-library conversion or source-format fallback.
 
-正文/附录/后置边界以稳定块引用表达。角色、目录树、自动编号与完整标题全部派生。
-`application/heading-api.ts` 是专供浏览器使用的纯函数入口，与 worker 共用同一个
-标题计算函数。浏览器目录试排不生成可发布正文，正式预览仍消费已构建候选。
+## Editing And Rendering
 
-## 3. 导入与编译
+The existing editor uses local Markdown fragments as input syntax only. Ordinary non-heading
+root edits load only the owning block and validate its typed structure and references through
+indexes. Structural edits validate the ordered book context. SQLite atomically commits changed
+rows and max(now, previous + 1); no-op saves keep the time. Permission changes do not change it.
 
-只接受包含 `content_list_v2.json` 或 `<stem>_content_list_v2.json` 的单书 MinerU ZIP。
-先执行 ZIP 路径、特殊文件、流式大小和资源限制检查，再直接读取 v2 页面记录生成 IR。
-不读取旧 JSON 或 Markdown 正文，不允许多个书包自动混合，不支持手选普通 Markdown。
+The supervisor captures stored root JSON in a consistent database read snapshot without expanding
+another whole-book tree. Import acceptance likewise streams the child's validated, hash-bound
+document into SQL rows before its write transaction. The compiler child validates and reads the
+frozen snapshot off the reader path. It renders semantic HTML with
+sanitization, KaTeX and Shiki, then materializes preview/reader shells and authorized URLs.
+Unchanged pages may reuse hash-verified HTML from a same-compiler artifact; snapshots larger than
+32 MiB, books with more than 100 pages, and pages with footnotes or rendering warnings are rendered
+normally. Large navigation shells can cost more to parse than fresh rendering. Heading numbering,
+page content and shared publishing inputs must match before reuse. No extra body cache is stored.
 
-表格 HTML 通过 parse5 转成结构化单元格；嵌套、对齐、合并与图表说明不能丢失。
-无内容的标题、列表及嵌套表格占位记录记入清理证据。资源引用缺失或不支持的内容明确失败。
-印刷目录恢复、重复内容清理和中文排版发生在 IR 准备阶段。目录算法直接按结构化块顺序
-工作，清理区域保存块 ID；来源坐标仅在私有 analysis v2 中使用原始 JSON 页和记录索引。
-旧偏移索引、源区域应用器、Markdown 标题截取及整篇 Markdown 改写函数均已删除。
-
-当前预算为 256 MiB 正文文件、20,000 顶层块、100,000 有身份的嵌套节点、1,000,000 JSON
-节点、128 JSON 深度和 32 块深度。嵌套节点预算包含新增的表格单元格正文，不把它们都算作
-原先的顶层块。ZIP、图像、页面并发、任务超时和进程终止预算保持有效。
-
-编译器直接消费 IR，复用净化、KaTeX、高亮和 Reader 外壳，一次生成正文、导航、分页、
-搜索和资源映射。Reader 请求只读预生成产物，不解析整书、不渲染、不索引。
-
-## 4. 保存协议
-
-`updated_at` 是服务端 Unix 毫秒整数，也是唯一草稿修订标识。有效变化使用
-`max(now, previous + 1)`，同毫秒与时钟回拨时仍递增。无变化保存检查冲突但不推进时间。
-不使用文件 mtime、客户端时间、独立 revision 或正文哈希作为修订标识。
-
-草稿查询返回 `updated_at`；保存提交 `expected_updated_at`，接收后返回 `202` 和持久
-`save_draft` 任务身份。局部 Markdown 只是现有编辑框语法，经普通编辑函数转回 IR，
-不构成独立导入格式或持久正文。保存中可以继续输入；冲突和失败不能丢弃本地修改。
-
-有效新保存请求先中止同书未完成的旧预览构建，沿用取消协议及 10 秒终止宽限。保存优先
-执行，但不抢占其他书正在运行的任务；始终只有一个重任务。保存失败且没有后续保存时，
-恢复被该保存中止的当前预览构建。
-
-文件与 SQLite 不是一个事务，协议分为：
-
-1. Web 在短 `IMMEDIATE` 事务中检查期望时间并登记请求、任务和旧构建取消。
-2. worker 在事务外读取整书、解析编辑、校验、准备新正文/资源/编辑视图。
-3. 将恢复材料放到 `draft/saves/<jobId>/`，持久登记接纳时间、预备路径、文件摘要和 no-op
-   结果。任务临时目录清理不删除这份恢复记录。
-4. 在短 `IMMEDIATE` 事务中再次检查任务租约、取消、图书存续和当前时间，原子替换正文，
-   登记资源及新候选并完成保存任务。整书解析、写临时文件和渲染不在事务内。
-5. 文件替换后事务失败时，恢复程序先根据持久记录和正文摘要补全登记，不重复应用编辑。
-   未替换的重试复用预备正文，不重新生成 ID 或重复推进时间。已保存正文不因任务取消被删除。
-
-日常编辑查询只读取当前时间戳视图与有界块索引。字节位置仅是派生 NDJSON 文件索引的
-存储实现，不进入正文 schema。整书文件摘要仅用于存储完整性校验。
-
-## 5. 候选与发布
-
-候选记录 `source_updated_at`，URL 使用 candidate ID，不使用时间戳路由冒充候选身份。
-构建捕获不可变 `book.json` 与资源登记证明。旧 ready 候选在新构建期间仍可私有预览；
-不能据此发布旧候选。
-
-保存提交、构建输入捕获和发布共用 SQLite 的短 `IMMEDIATE` 协调边界。发布拒绝任何待完成
-保存、过期正文时间、非当前候选、未 ready 候选、阻塞诊断、构建身份或完整性不匹配。
-发布只晋升已预览的候选，`current_version_id` 是唯一发布指针。已发布文件永不原地修改。
-
-管理接口需要管理员、禁止缓存与索引；匿名私有正文/资源返回 404。候选资源签名绑定会话、
-图书、候选、资源和有效期。预览 iframe 保持 opaque sandbox；公开 Reader 静态资源不含
-图书私密内容。开发服务器仅让这些明确的 CORS GET/HEAD 路由通过 Astro Fetch Metadata
-前置限制，实际白名单与签名授权仍由原路由执行，不开放其他管理或源码资源。
-
-## 6. 直接切换与验收
-
-新运行时拒绝旧数据库基线。使用新目录初始化管理员并重新导入；不继承旧书编辑、块身份、
-发布历史或地址。D-139 已授权删除旧 Mirawind 服务及 Docker 专属卷；`data/development`
-未被删除，也不供 IR 运行时读取。不得为回退添加旧格式读取能力。
-
-先前的中间验证目录不再供最终运行时使用；最终目录为 `data/library`。
-15 本真实 v2 样本及 500 页压力书已逐本预览并私密发布。数据库完整性及外键检查通过。
-已完成的检查项：
-
-- 统一 schema、标题三态/子树排除、编辑往返、冲突、同毫秒与时钟回拨测试。
-- 保存中止、任务重试、文件/事务崩溃恢复、候选过期与发布竞态测试。
-- D-140 删除独立归档/图片安全审查与专用测试；导入假定管理员善意，保留正常解包、取消、
-  失败清理、内容格式、授权、私有资源隔离、版本完整性、发布恢复与搜索隔离测试。
-- 删除旧适配器、旧格式转换和 Markdown 偏移身份恢复专属测试；不添加转换快照或代码缺失测试。
-- 原始 JSON 逐块内容核对、独立 PDF 目录转写比较；不读取旧 Markdown 观察记录。
-- 综合小书、15 本真实书与压力书；桌面/移动端编辑、保存、预览、发布；测量 RSS、耗时和
-  未缓存阅读 p95，保持既有回退容差与 300 ms 阅读门禁。
-- 全量 typecheck、lint、build、相关测试和文档一致性检查，无未缓解的严重问题。
-
-私有流水线观测文件使用 v2，仅记录当前实际采集的阶段和指标，删除旧 Markdown 阶段及
-无人写入的计数。旧观测文件保持为历史证据，不转换或由当前解析器接纳；不影响正文、
-manifest、版本完整性标记及已保存的汇总性能报告。
-
-本轮不实现整篇富文本编辑、章节拖拽、EPUB、笔记编辑或通用导入导出。
+Manifest v5 maps pages, blocks, navigation and shared resources. Marker v5 closes generated files
+and separately records shared files. Assets are never copied into each build. Published versions
+remain immutable and current_version_id remains the sole reader pointer.

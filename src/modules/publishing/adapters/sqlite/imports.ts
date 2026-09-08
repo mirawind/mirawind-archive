@@ -1,10 +1,6 @@
 import type Database from "better-sqlite3";
 
 import { hasControlCharacters } from "@/domain/text";
-import type {
-  CandidateDiagnostic,
-  MineruCandidate,
-} from "../filesystem/discover-mineru-candidates";
 import { createOpaqueId } from "@/domain/ids";
 import { withImmediateTransaction } from "@/platform/sqlite/immediate-transaction";
 
@@ -16,7 +12,6 @@ export type ImportState =
   | "rejected"
   | "canceled"
   | "expired";
-export type CandidateConfidence = "ambiguous" | "high";
 
 interface ImportRow {
   book_id: number | null;
@@ -25,22 +20,12 @@ interface ImportRow {
   id: string;
   original_name: string;
   safe_error_code: string | null;
-  selected_candidate_id: string | null;
+  source_path: string | null;
   state: ImportState;
   updated_at: number;
   upload_rel_path: string;
   upload_sha256: string;
   upload_size_bytes: number;
-}
-
-interface CandidateRow {
-  confidence: CandidateConfidence;
-  diagnostics_json: string;
-  evidence_json: string;
-  id: string;
-  import_id: string;
-  normalized_path: string;
-  score: number;
 }
 
 export interface ImportRecord {
@@ -50,22 +35,12 @@ export interface ImportRecord {
   readonly id: string;
   readonly originalName: string;
   readonly safeErrorCode: string | null;
-  readonly selectedCandidateId: string | null;
+  readonly sourcePath: string | null;
   readonly state: ImportState;
   readonly updatedAtMs: number;
   readonly uploadRelativePath: string;
   readonly uploadSha256: string;
   readonly uploadSizeBytes: number;
-}
-
-export interface ImportCandidateRecord {
-  readonly confidence: CandidateConfidence;
-  readonly diagnostics: readonly CandidateDiagnostic[];
-  readonly evidence: Readonly<Record<string, unknown>>;
-  readonly id: string;
-  readonly importId: string;
-  readonly normalizedPath: string;
-  readonly score: number;
 }
 
 function mapImport(row: ImportRow): ImportRecord {
@@ -76,26 +51,12 @@ function mapImport(row: ImportRow): ImportRecord {
     id: row.id,
     originalName: row.original_name,
     safeErrorCode: row.safe_error_code,
-    selectedCandidateId: row.selected_candidate_id,
+    sourcePath: row.source_path,
     state: row.state,
     updatedAtMs: row.updated_at,
     uploadRelativePath: row.upload_rel_path,
     uploadSha256: row.upload_sha256,
     uploadSizeBytes: row.upload_size_bytes,
-  });
-}
-
-function mapCandidate(row: CandidateRow): ImportCandidateRecord {
-  return Object.freeze({
-    confidence: row.confidence,
-    diagnostics: JSON.parse(row.diagnostics_json) as CandidateDiagnostic[],
-    evidence: JSON.parse(row.evidence_json) as Readonly<
-      Record<string, unknown>
-    >,
-    id: row.id,
-    importId: row.import_id,
-    normalizedPath: row.normalized_path,
-    score: row.score,
   });
 }
 
@@ -135,7 +96,7 @@ export class ImportRepository {
       .prepare(
         `INSERT INTO imports (
           id, original_name, state, upload_rel_path, upload_size_bytes, upload_sha256,
-          selected_candidate_id, book_id, safe_error_code,
+          source_path, book_id, safe_error_code,
           created_at, updated_at, expires_at
         ) VALUES (?, ?, 'uploaded', ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
       )
@@ -166,18 +127,6 @@ export class ImportRepository {
     return record;
   }
 
-  candidates(importId: string): readonly ImportCandidateRecord[] {
-    return (
-      this.database
-        .prepare(
-          `SELECT * FROM import_candidates
-           WHERE import_id = ?
-           ORDER BY score DESC, id`,
-        )
-        .all(importId) as CandidateRow[]
-    ).map(mapCandidate);
-  }
-
   startAnalysis(importId: string, nowMs: number): ImportRecord {
     const current = this.require(importId);
     if (current.state === "analyzing") return current;
@@ -185,66 +134,27 @@ export class ImportRepository {
     return this.require(importId);
   }
 
-  saveCandidates(input: {
-    readonly candidates: readonly MineruCandidate[];
-    readonly importId: string;
-    readonly nextState: "preparing";
-    readonly nowMs: number;
-    readonly selectedCandidateId: string | null;
+  selectDocument(input: {
+    importId: string;
+    path: string;
+    nowMs: number;
   }): ImportRecord {
-    return withImmediateTransaction(this.database, () => {
-      const current = this.require(input.importId);
-      if (current.state !== "analyzing") {
-        throw new Error("IMPORT_STATE_CONFLICT");
-      }
-      if (input.nextState === "preparing" && !input.selectedCandidateId) {
-        throw new Error("IMPORT_SELECTED_CANDIDATE_REQUIRED");
-      }
-      const insert = this.database.prepare(
-        `INSERT INTO import_candidates (
-          id, import_id, normalized_path, confidence, score,
-          evidence_json, diagnostics_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const candidate of input.candidates) {
-        insert.run(
-          candidate.id,
-          input.importId,
-          candidate.normalizedPath,
-          candidate.confidence,
-          candidate.score,
-          JSON.stringify({
-            byteSize: candidate.byteSize,
-            companionFiles: candidate.companionFiles,
-            firstHeading: candidate.firstHeading,
-            referencedResources: candidate.referencedResources,
-          }),
-          JSON.stringify(candidate.diagnostics),
-        );
-      }
-      const result = this.database
-        .prepare(
-          `UPDATE imports
-           SET state = ?, selected_candidate_id = ?, updated_at = ?
-           WHERE id = ? AND state = 'analyzing'
-             AND (
-               ? IS NULL OR EXISTS (
-                 SELECT 1 FROM import_candidates
-                 WHERE import_id = imports.id AND id = ?
-               )
-             )`,
-        )
-        .run(
-          input.nextState,
-          input.selectedCandidateId,
-          input.nowMs,
-          input.importId,
-          input.selectedCandidateId,
-          input.selectedCandidateId,
-        );
-      if (result.changes !== 1) throw new Error("IMPORT_CANDIDATE_INVALID");
-      return this.require(input.importId);
-    });
+    if (
+      !/(?:^|_)content_list_v2\.json$/iu.test(
+        input.path.split("/").at(-1) ?? "",
+      ) ||
+      input.path
+        .split("/")
+        .some((part) => !part || part === "." || part === "..")
+    )
+      throw new Error("IMPORT_DOCUMENT_INVALID");
+    const changed = this.database
+      .prepare(
+        "UPDATE imports SET state='preparing',source_path=?,updated_at=? WHERE id=? AND state='analyzing'",
+      )
+      .run(input.path, input.nowMs, input.importId);
+    if (changed.changes !== 1) throw new Error("IMPORT_STATE_CONFLICT");
+    return this.require(input.importId);
   }
 
   attachBookForPreparation(input: {
@@ -330,52 +240,6 @@ export class ImportRepository {
       .run(nowMs, importId);
     if (result.changes !== 1) throw new Error("IMPORT_STATE_CONFLICT");
     return this.require(importId);
-  }
-
-  saveRejectedCandidates(input: {
-    readonly candidates: readonly MineruCandidate[];
-    readonly errorCode: string;
-    readonly importId: string;
-    readonly nowMs: number;
-  }): ImportRecord {
-    validateSafeErrorCode(input.errorCode);
-    return withImmediateTransaction(this.database, () => {
-      const current = this.require(input.importId);
-      if (current.state !== "analyzing") {
-        throw new Error("IMPORT_STATE_CONFLICT");
-      }
-      const insert = this.database.prepare(
-        `INSERT INTO import_candidates (
-          id, import_id, normalized_path, confidence, score,
-          evidence_json, diagnostics_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      );
-      for (const candidate of input.candidates) {
-        insert.run(
-          candidate.id,
-          input.importId,
-          candidate.normalizedPath,
-          candidate.confidence,
-          candidate.score,
-          JSON.stringify({
-            byteSize: candidate.byteSize,
-            companionFiles: candidate.companionFiles,
-            firstHeading: candidate.firstHeading,
-            referencedResources: candidate.referencedResources,
-          }),
-          JSON.stringify(candidate.diagnostics),
-        );
-      }
-      const changed = this.database
-        .prepare(
-          `UPDATE imports
-           SET state = 'rejected', safe_error_code = ?, updated_at = ?
-           WHERE id = ? AND state = 'analyzing'`,
-        )
-        .run(input.errorCode, input.nowMs, input.importId);
-      if (changed.changes !== 1) throw new Error("IMPORT_STATE_CONFLICT");
-      return this.require(input.importId);
-    });
   }
 
   private transition(

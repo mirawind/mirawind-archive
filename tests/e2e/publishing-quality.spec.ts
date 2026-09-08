@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { expect, test, type FrameLocator, type Page } from "@playwright/test";
@@ -37,7 +36,7 @@ function expectRendererClosure(
       expect.objectContaining({
         status: 200,
         url: expect.stringContaining(
-          "/reader-assets/renderers/semantic-html-v7-katex-0.18.1/katex.css",
+          "/reader-assets/renderers/semantic-html-v8-katex-0.18.1/katex.css",
         ),
       }),
       expect.objectContaining({
@@ -102,7 +101,7 @@ test("closes typography, formula and printed contents preview-to-publication beh
   );
 
   const rendererStylesheet =
-    "/reader-assets/renderers/semantic-html-v7-katex-0.18.1/katex.css";
+    "/reader-assets/renderers/semantic-html-v8-katex-0.18.1/katex.css";
   const rendererResponse = await page.request.get(rendererStylesheet);
   expect(rendererResponse.headers()["cache-control"]).toBe(
     "public, max-age=31536000, immutable",
@@ -156,11 +155,23 @@ test("closes typography, formula and printed contents preview-to-publication beh
   rendererFailures.length = 0;
 
   const qualityBookId = Number(new URL(page.url()).pathname.split("/").at(-1));
-  const bookJson = await readFile(
-    resolve(e2eDataRoot, "books", String(qualityBookId), "draft/book.json"),
-    "utf8",
-  );
-  const body = JSON.stringify(JSON.parse(bookJson).blocks);
+  const storage = new Database(resolve(e2eDataRoot, "db/mirawind.sqlite"), {
+    readonly: true,
+  });
+  let body: string;
+  try {
+    body = (
+      storage
+        .prepare(
+          "SELECT content_json FROM book_blocks WHERE book_id=? ORDER BY ordinal",
+        )
+        .all(qualityBookId) as { content_json: string }[]
+    )
+      .map((row) => row.content_json)
+      .join("\n");
+  } finally {
+    storage.close();
+  }
   expect(body).toContain("中文 English123 测试，继续：结束？");
   expect(body).toContain("https://example.com/a?x=1&y=2");
   expect(body).toContain("v1.2.3");
@@ -216,16 +227,20 @@ test("closes typography, formula and printed contents preview-to-publication beh
 
   const databasePath = resolve(e2eDataRoot, "db", "mirawind.sqlite");
   const book = { id: Number(new URL(page.url()).pathname.split("/").at(-1)) };
-  const retained = JSON.parse(
-    await readFile(
-      resolve(e2eDataRoot, "books", String(book.id), "draft/book.json"),
-      "utf8",
-    ),
-  ) as { blocks: { type: string; content: unknown }[] };
-  expect(
-    retained.blocks.filter((block) => block.type === "heading"),
-  ).toHaveLength(6);
-  expect(JSON.stringify(retained.blocks)).not.toContain("......");
+  const retained = new Database(databasePath, { readonly: true });
+  try {
+    const blocks = retained
+      .prepare(
+        "SELECT type,content_json FROM book_blocks WHERE book_id=? ORDER BY ordinal",
+      )
+      .all(book.id) as { type: string; content_json: string }[];
+    expect(blocks.filter((block) => block.type === "heading")).toHaveLength(6);
+    expect(blocks.map((block) => block.content_json).join("\n")).not.toContain(
+      "......",
+    );
+  } finally {
+    retained.close();
+  }
 
   await page.getByRole("button", { name: "发布当前预览" }).click();
   await expect(page.getByRole("link", { name: "开始阅读" })).toBeVisible({

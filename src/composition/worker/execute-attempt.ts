@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 
 import { markBookDeletionPurging } from "../book-deletion";
 import { captureFrozenJobInput } from "./capture-frozen-input";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import {
@@ -55,7 +55,7 @@ function safeExecutionError(error: unknown): string {
 }
 
 export async function executeWorkerAttempt(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly childRunner?: typeof runJobChild;
   readonly database: Database.Database;
   readonly job: UserJobRecord;
@@ -114,7 +114,7 @@ export async function executeWorkerAttempt(input: {
     }
     const command = await captureFrozenJobInput({
       job: input.job,
-      candidates: input.candidates,
+      builds: input.builds,
       imports: input.imports,
       database: input.database,
       layout: input.layout,

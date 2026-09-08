@@ -1,28 +1,24 @@
 import type Database from "better-sqlite3";
-import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 
-import { CandidatePublicationRepository } from "@/modules/publishing/adapters/sqlite/candidate-publication";
+import { BuildPublicationRepository } from "@/modules/publishing/adapters/sqlite/build-publication";
 import {
   m1PublishPolicy,
-  publishCandidate,
+  publishBuild,
 } from "@/modules/publishing/application/publishing-api";
 
-export function createPublicationServer(
-  database: Database.Database,
-  layout: StorageLayout,
-) {
+export function createPublicationServer(database: Database.Database) {
   return Object.freeze({
-    publishCandidate: (input: {
+    publishBuild: (input: {
       readonly actorUserId: string | null;
       readonly bookId: number;
       readonly expectedUpdatedAt: number;
-      readonly candidateId: string;
+      readonly buildId: string;
       readonly nowMs: number;
     }) =>
-      publishCandidate({
+      publishBuild({
         ...input,
         policy: m1PublishPolicy,
-        publication: new CandidatePublicationRepository(database, layout),
+        publication: new BuildPublicationRepository(database),
       }),
   });
 }

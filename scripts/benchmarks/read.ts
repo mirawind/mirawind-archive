@@ -31,7 +31,7 @@ function runningBuild(database: Database.Database): boolean {
          WHERE state = 'running'
            AND kind IN (
              'analyze_import', 'prepare_draft',
-             'build_candidate'
+             'build_book'
            )
          LIMIT 1`,
       )

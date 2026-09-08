@@ -42,18 +42,6 @@ export class SqliteBookPublishingCleanup
     };
     this.database
       .prepare(
-        `UPDATE draft_candidates
-         SET state = 'canceled', safe_error_code = 'JOB_CANCELED',
-             completed_at = @nowMs
-         WHERE state = 'building' AND job_id IN (
-           SELECT id FROM jobs
-           WHERE book_id = @bookId AND id != @cleanupJobId
-             AND state = 'queued'
-         )`,
-      )
-      .run(parameters);
-    this.database
-      .prepare(
         `UPDATE jobs
          SET state = 'canceled', cancellation_requested_at = @nowMs,
              finished_at = @nowMs, error_class = 'canceled',
@@ -123,7 +111,7 @@ export class SqliteBookPublishingCleanup
     this.database
       .prepare(
         `UPDATE jobs
-         SET import_id = NULL, book_id = NULL, candidate_id = NULL,
+         SET import_id = NULL, book_id = NULL,
              version_id = NULL, captured_input_path = NULL,
              captured_source_updated_at = NULL,
              captured_current_version_id = NULL, progress_json = ?,
@@ -136,7 +124,10 @@ export class SqliteBookPublishingCleanup
       )
       .run(emptyProgress, input.cleanupJobId, input.bookId);
     this.database
-      .prepare("DELETE FROM draft_candidates WHERE book_id = ?")
+      .prepare("DELETE FROM book_documents WHERE book_id=?")
+      .run(input.bookId);
+    this.database
+      .prepare("DELETE FROM document_commands WHERE book_id=?")
       .run(input.bookId);
     this.database
       .prepare(
@@ -149,22 +140,6 @@ export class SqliteBookPublishingCleanup
     this.database
       .prepare("DELETE FROM original_files WHERE book_id = ?")
       .run(input.bookId);
-    this.database
-      .prepare("DELETE FROM save_draft_requests WHERE book_id = ?")
-      .run(input.bookId);
-    if (importIds.length > 0) {
-      this.database
-        .prepare(
-          `UPDATE imports SET selected_candidate_id = NULL
-           WHERE id IN (${placeholders})`,
-        )
-        .run(...importIds);
-      this.database
-        .prepare(
-          `DELETE FROM import_candidates WHERE import_id IN (${placeholders})`,
-        )
-        .run(...importIds);
-    }
     this.database
       .prepare("DELETE FROM book_resources WHERE book_id = ?")
       .run(input.bookId);

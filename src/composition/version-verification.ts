@@ -35,6 +35,7 @@ interface DeclaredFile {
 interface CheckedMarker {
   readonly directory: string;
   readonly files: readonly DeclaredFile[];
+  readonly sharedFiles: readonly DeclaredFile[];
 }
 
 async function digest(path: string): Promise<string> {
@@ -86,7 +87,7 @@ async function checkMarker(
   layout: StorageLayout,
   version: BookVersionRecord,
 ): Promise<CheckedMarker> {
-  const expectedRelativePath = `books/${version.bookId}/versions/${version.id}`;
+  const expectedRelativePath = `books/${version.bookId}/builds/${version.id}`;
   if (version.versionRelativePath !== expectedRelativePath) {
     throw new Error("VERSION_IDENTITY_MISMATCH");
   }
@@ -132,7 +133,8 @@ async function checkMarker(
       size: Number(file.size),
     }),
   );
-  return Object.freeze({ directory, files: Object.freeze(files) });
+  const sharedFiles = marker.shared_files as unknown as readonly DeclaredFile[];
+  return Object.freeze({ directory, files: Object.freeze(files), sharedFiles });
 }
 
 export async function verifyVersionQuickly(
@@ -141,6 +143,14 @@ export async function verifyVersionQuickly(
 ): Promise<VersionVerificationResult> {
   try {
     const checked = await checkMarker(layout, version);
+    for (const file of checked.sharedFiles)
+      await regularFile(
+        await resolveContainedPath(
+          layout.root,
+          `books/${version.bookId}/${file.path}`,
+        ),
+        file.size,
+      );
     const byPath = new Map(checked.files.map((file) => [file.path, file]));
     const authorities = ["book.json", "document-manifest.json"] as const;
     for (const path of authorities) {
@@ -172,6 +182,15 @@ export async function verifyVersionFully(
 ): Promise<VersionVerificationResult> {
   try {
     const checked = await checkMarker(layout, version);
+    for (const file of checked.sharedFiles) {
+      const path = await resolveContainedPath(
+        layout.root,
+        `books/${version.bookId}/${file.path}`,
+      );
+      await regularFile(path, file.size);
+      if ((await digest(path)) !== file.sha256)
+        throw new Error("VERSION_FILE_INTEGRITY_MISMATCH");
+    }
     const actual = new Map<
       string,
       { readonly sha256: string; readonly size: number }

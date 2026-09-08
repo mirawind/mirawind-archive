@@ -41,7 +41,7 @@ describe("current-version presentation publication", () => {
         "Unpublished title",
       );
       expect(fixture.jobs.get(fixture.candidateJob.id)).toMatchObject({
-        kind: "build_candidate",
+        kind: "build_book",
         state: "succeeded",
         versionId: publicationTestVersionId,
       });

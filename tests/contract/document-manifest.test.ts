@@ -22,9 +22,9 @@ function manifest(): Record<string, unknown> {
     book_id: 1,
     compiler: {
       name: "mirawind-book-compiler",
-      renderer_version: "semantic-html-v7-katex-0.18.1",
+      renderer_version: "semantic-html-v8-katex-0.18.1",
       text_normalization_version: 1,
-      version: "compiler-v7",
+      version: "compiler-v8",
     },
     source_updated_at: 2000,
     created_at: "2026-07-24T00:00:00.000Z",
@@ -48,7 +48,7 @@ function manifest(): Record<string, unknown> {
         width: 10,
       },
     },
-    schema_version: 4,
+    schema_version: 5,
     toc: [
       {
         block_id: blockId,
@@ -68,11 +68,12 @@ function versionMarker(): Record<string, unknown> {
     book_id: 1,
     book_document_sha256: "d".repeat(64),
     complete: true,
+    shared_files: [],
     compiler: {
       name: "mirawind-book-compiler",
-      renderer_version: "semantic-html-v7-katex-0.18.1",
+      renderer_version: "semantic-html-v8-katex-0.18.1",
       text_normalization_version: 1,
-      version: "compiler-v7",
+      version: "compiler-v8",
     },
     source_updated_at: 2000,
     created_at: "2026-07-24T00:00:00.000Z",
@@ -91,7 +92,7 @@ function versionMarker(): Record<string, unknown> {
     ],
     manifest_sha256: "e".repeat(64),
     predecessor_version_id: null,
-    schema_version: 4,
+    schema_version: 5,
     version_id: versionId,
   };
 }
@@ -101,7 +102,7 @@ describe("document manifest and immutable version marker", () => {
     const result = validateDocumentManifest(manifest());
     expect(result).toMatchObject({
       book_id: 1,
-      schema_version: 4,
+      schema_version: 5,
       version_id: versionId,
     });
     expect(Object.isFrozen(result)).toBe(true);
@@ -149,7 +150,7 @@ describe("document manifest and immutable version marker", () => {
   it("requires a strict complete marker and canonical closed file list", () => {
     expect(validateVersionMarker(versionMarker())).toMatchObject({
       complete: true,
-      schema_version: 4,
+      schema_version: 5,
     });
 
     expect(() =>
@@ -200,7 +201,7 @@ describe("document manifest and immutable version marker", () => {
       }),
     );
     expect(() =>
-      validateDocumentManifest({ ...manifest(), schema_version: 5 }),
+      validateDocumentManifest({ ...manifest(), schema_version: 6 }),
     ).toThrow(
       expect.objectContaining({
         code: "DOCUMENT_MANIFEST_SCHEMA_VERSION_UNSUPPORTED",
@@ -214,7 +215,7 @@ describe("document manifest and immutable version marker", () => {
       }),
     );
     expect(() =>
-      validateVersionMarker({ ...versionMarker(), schema_version: 5 }),
+      validateVersionMarker({ ...versionMarker(), schema_version: 6 }),
     ).toThrow(
       expect.objectContaining({
         code: "VERSION_MARKER_SCHEMA_VERSION_UNSUPPORTED",

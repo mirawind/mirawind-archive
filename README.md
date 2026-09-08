@@ -119,8 +119,19 @@ MIRAWIND_REAL_FIXTURE_DIR="$PWD/tests/fixtures/mineru/real" pnpm test:e2e
 - [恢复与事故处理](docs/operations/recovery.md)
 - [当前接口与历史规格索引](specs/README.md)
 
-可更新的 `book.json` 是正文、元数据与出版设置的唯一编辑权威，`updated_at` 是保存冲突标识。
-只接受包含 `content_list_v2.json` 或 `<stem>_content_list_v2.json` 的单书 ZIP；Markdown
-片段只用于按块编辑。AST、HTML、manifest、生成资源和搜索索引由固定正文与源资源构建。
-预览和发布共享候选产物，已发布版本不可变；SQLite 的 `current_version_id` 是唯一当前指针。
-展示投影不是另一份编辑权威。旧数据库不能原地升级到本轮正文模型，必须在新数据根重新导入。
+SQLite 的 `book_documents` 和 `book_blocks` 是工作稿权威，`book_nodes` 定位嵌套块。
+普通正文编辑只读写所属根块，`updated_at` 是保存冲突标识。保存事务完成即返回成功，预览
+在后台合并构建；未变化页面可以复用已验证 HTML。图片和原始 ZIP 每书只保存一份。
+`book.json` 仅存在于不可变构建快照中，预览与发布共用构建 ID；SQLite 的
+`current_version_id` 是唯一发布指针。旧数据库不得原地升级，D-141 使用获批的数据重置。
+
+在 DBeaver 连接 `data/library/db/mirawind.sqlite`，可直接查看正文：
+
+```sql
+SELECT id, ordinal, type, content_json
+FROM book_blocks
+WHERE book_id = 1
+ORDER BY ordinal;
+```
+
+不要直接修改运行中的表；通过工作台保存才能执行语义校验、冲突检查和预览调度。

@@ -30,12 +30,8 @@ export const GET: APIRoute = async ({ locals, params }) => {
   }
   const publishing = createPublishingDraftServer(database);
   const book = publishing.findBook(bookId);
-  const candidate = publishing.findCurrentCandidate(bookId);
-  if (
-    !book?.draftImportId ||
-    !candidate?.versionId ||
-    candidate.state !== "ready"
-  ) {
+  const candidate = publishing.findCurrentBuild(bookId);
+  if (!book?.draftImportId || !candidate?.id || candidate.state !== "ready") {
     throw new SafeApplicationError(
       "NOT_FOUND",
       "The images were not found.",
@@ -43,8 +39,7 @@ export const GET: APIRoute = async ({ locals, params }) => {
     );
   }
   const layout = await getRuntimeStorageLayout();
-  const view =
-    await createPublishingArtifactServer(layout).readDraftView(bookId);
+  const view = publishing.readDraftView(bookId);
   if (candidate.sourceUpdatedAt !== view.updated_at)
     throw new SafeApplicationError(
       "NOT_FOUND",
@@ -54,8 +49,8 @@ export const GET: APIRoute = async ({ locals, params }) => {
   const artifacts = createPublishingArtifactServer(layout);
   const images = await artifacts.listCandidateImages({
     bookId,
-    versionId: candidate.versionId,
-    versionRelativePath: `books/${bookId}/versions/${candidate.versionId}`,
+    versionId: candidate.id,
+    versionRelativePath: `books/${bookId}/builds/${candidate.id}`,
   });
   const headers = new Headers();
   applyResponsePolicy(headers, "private-api");

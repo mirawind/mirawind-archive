@@ -37,9 +37,9 @@ function manifest(bookId: number): Readonly<Record<string, unknown>> {
     book_id: bookId,
     compiler: {
       name: "mirawind-book-compiler",
-      renderer_version: "semantic-html-v7-katex-0.18.1",
+      renderer_version: "semantic-html-v8-katex-0.18.1",
       text_normalization_version: 1,
-      version: "compiler-v7",
+      version: "compiler-v8",
     },
     source_updated_at: 1000,
     created_at: "2026-07-24T00:00:00.000Z",
@@ -56,13 +56,13 @@ function manifest(bookId: number): Readonly<Record<string, unknown>> {
     resources: {
       [resourceId]: {
         media_type: "image/png",
-        output_path: `published/resources/${resourceId}`,
+        output_path: `assets/${resourceId}.png`,
         sha256: "e".repeat(64),
         size: 3,
-        source_path: "source/image.png",
+        source_path: `assets/${resourceId}.png`,
       },
     },
-    schema_version: 4,
+    schema_version: 5,
     toc: [
       {
         block_id: blockId,
@@ -93,7 +93,7 @@ describe("immutable published manifest cache", () => {
         dataRoot.layout.root,
         "books",
         String(fixture.book.id),
-        "versions",
+        "builds",
         publicationTestVersionId,
       );
       await mkdir(versionDirectory, { mode: 0o700, recursive: true });
@@ -141,7 +141,7 @@ describe("immutable published manifest cache", () => {
         dataRoot.layout.root,
         "books",
         String(fixture.book.id),
-        "versions",
+        "builds",
         publicationTestVersionId,
       );
       await mkdir(versionDirectory, { mode: 0o700, recursive: true });
@@ -239,22 +239,35 @@ describe("immutable published manifest cache", () => {
   it("streams preview resources from validated manifest metadata", () =>
     withMigratedTestDatabase(async ({ database }, dataRoot) => {
       const fixture = setupPublicationFixture(database);
-      const versionRelativePath = `books/${fixture.book.id}/versions/${publicationTestVersionId}`;
+      const versionRelativePath = `books/${fixture.book.id}/builds/${publicationTestVersionId}`;
       const versionDirectory = resolve(
         dataRoot.layout.root,
         versionRelativePath,
       );
-      await mkdir(resolve(versionDirectory, "published", "resources"), {
-        mode: 0o700,
-        recursive: true,
-      });
+      await mkdir(
+        resolve(
+          dataRoot.layout.bookDirectory,
+          String(fixture.book.id),
+          "assets",
+        ),
+        {
+          mode: 0o700,
+          recursive: true,
+        },
+      );
+      await mkdir(versionDirectory, { recursive: true });
       await writeFile(
         resolve(versionDirectory, "document-manifest.json"),
         `${JSON.stringify(manifest(fixture.book.id))}\n`,
         { mode: 0o600 },
       );
       await writeFile(
-        resolve(versionDirectory, "published", "resources", resourceId),
+        resolve(
+          dataRoot.layout.bookDirectory,
+          String(fixture.book.id),
+          "assets",
+          resourceId + ".png",
+        ),
         Uint8Array.from([1, 2, 3]),
         { mode: 0o600 },
       );

@@ -32,13 +32,12 @@ async function ready(page: Page, bookId: number, after: number) {
         const value = await draft(page, bookId);
         return {
           newer: value.updated_at > after,
-          pending: value.pending_save,
-          state: value.candidate?.state,
+          state: value.build?.state,
         };
       },
       { timeout: 45000 },
     )
-    .toEqual({ newer: true, pending: false, state: "ready" });
+    .toEqual({ newer: true, state: "ready" });
   return draft(page, bookId);
 }
 
@@ -47,6 +46,17 @@ test("uses one heading policy through save, preview, private publication and mob
   context,
 }) => {
   const bookId = await openBook(page, "192.0.2.81");
+  const preview = page.frameLocator("iframe");
+  await preview.locator("a[rel='next']").click();
+  await expect(preview.locator("[data-reader-page-id]")).toHaveAttribute(
+    "data-reader-page-id",
+    "2",
+  );
+  await preview.locator("a[rel='prev']").click();
+  await expect(preview.locator("[data-reader-page-id]")).toHaveAttribute(
+    "data-reader-page-id",
+    "1",
+  );
   const initial = await draft(page, bookId);
   const main = initial.structure.find((node) => node.title_markdown === "Main");
   if (!main) throw new Error("MAIN_HEADING_MISSING");
@@ -116,16 +126,25 @@ test("retains paragraph typing while saving and preserves block identity", async
   const text = dialog.locator("textarea");
   await expect(text).toBeVisible();
   await text.fill("Submitted paragraph.");
-  let release!: () => void;
+  let release!: () => void, applied!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  let hold = true;
-  await page.route("**/api/manage/jobs/*", async (route) => {
-    const response = await route.fetch();
-    if (hold) await gate;
-    await route.fulfill({ response });
+  const committed = new Promise<void>((resolve) => {
+    applied = resolve;
   });
+  let hold = true;
+  await page.route(
+    "**/api/manage/books/" + bookId + "/draft/blocks/" + blockId,
+    async (route) => {
+      const response = await route.fetch();
+      if (hold && route.request().method() === "PATCH") {
+        applied();
+        await gate;
+      }
+      await route.fulfill({ response });
+    },
+  );
   const saving = page.waitForResponse(
     (response) =>
       response.request().method() === "PATCH" &&
@@ -134,21 +153,29 @@ test("retains paragraph typing while saving and preserves block identity", async
   await dialog
     .getByRole("button", { name: "保存正文并更新预览", exact: true })
     .click();
-  expect((await saving).status()).toBe(202);
+  await committed;
   await text.fill("Typed after submission.");
   hold = false;
   release();
-  await expect(
-    dialog.getByRole("button", { name: "保存正文并更新预览", exact: true }),
-  ).toBeEnabled({ timeout: 30000 });
+  expect((await saving).status()).toBe(200);
   await expect(text).toHaveValue("Typed after submission.");
-  const accepted = await draft(page, bookId);
-  expect(accepted.updated_at).toBeGreaterThan(initial.updated_at);
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(
+              "/api/manage/books/" + bookId + "/draft/blocks/" + blockId,
+            )
+          ).json()
+        ).markdown,
+    )
+    .toBe("Typed after submission.");
   await dialog
-    .getByRole("button", { name: "保存正文并更新预览", exact: true })
+    .getByRole("button", { name: "关闭正文编辑", exact: true })
     .click();
-  await expect(dialog).not.toBeVisible({ timeout: 30000 });
-  await ready(page, bookId, accepted.updated_at);
+  await expect(dialog).not.toBeVisible();
+  await ready(page, bookId, initial.updated_at);
   const block = await (
     await page.request.get(
       `/api/manage/books/${bookId}/draft/blocks/${blockId}`,
@@ -171,7 +198,6 @@ test("rejects a second editor's stale save without discarding local changes", as
   await other.goto(`/manage/books/${bookId}`);
   const otherTitle = other.getByLabel("标题", { exact: true }).first();
   await expect(otherTitle).toBeVisible();
-  await otherTitle.fill("Second editor local title");
   await page
     .getByLabel("标题", { exact: true })
     .first()
@@ -185,9 +211,7 @@ test("rejects a second editor's stale save without discarding local changes", as
       response.request().method() === "PATCH" &&
       response.url().endsWith("/draft"),
   );
-  await other
-    .getByRole("button", { name: "保存并更新预览", exact: true })
-    .click();
+  await otherTitle.fill("Second editor local title");
   expect((await stale).status()).toBe(412);
   await expect(otherTitle).toHaveValue("Second editor local title");
   await expect(

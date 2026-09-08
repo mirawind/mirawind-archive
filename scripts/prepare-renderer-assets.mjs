@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { transform } from "lightningcss";
 
-const rendererVersion = "semantic-html-v7-katex-0.18.1";
+const rendererVersion = "semantic-html-v8-katex-0.18.1";
 const katexVersion = "0.18.1";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputFlag = process.argv.indexOf("--output");

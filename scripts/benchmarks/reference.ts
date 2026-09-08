@@ -6,11 +6,12 @@ import { fileURLToPath } from "node:url";
 
 import Database from "better-sqlite3";
 
-import { readDraftHeader } from "@/modules/publishing/adapters/filesystem/draft-document";
-import { createStorageLayout } from "@/platform/filesystem/storage-layout";
+import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
+import { saveDocument } from "@/modules/publishing/adapters/sqlite/save-document";
+import { createOpaqueId } from "@/domain/ids";
 import { normalizeSearchQuery } from "../../src/modules/reader/core/search-query.js";
-import { CandidatePublicationRepository } from "../../src/modules/publishing/adapters/sqlite/candidate-publication.js";
-import { DraftCandidateRepository } from "../../src/modules/publishing/adapters/sqlite/draft-candidate-repository.js";
+import { BuildPublicationRepository } from "../../src/modules/publishing/adapters/sqlite/build-publication.js";
+import { BuildRepository } from "../../src/modules/publishing/adapters/sqlite/builds.js";
 import { DraftRepository } from "../../src/modules/publishing/adapters/sqlite/drafts.js";
 import {
   JobRepository,
@@ -19,7 +20,7 @@ import {
 import { openDatabase } from "../../src/platform/sqlite/connection.js";
 import {
   m1PublishPolicy,
-  publishCandidate,
+  publishBuild,
 } from "../../src/modules/publishing/application/publishing-api.js";
 import { runBuildBenchmarks } from "./build.js";
 import { captureBenchmarkEnvironment } from "./environment.js";
@@ -324,10 +325,15 @@ async function waitForWorker(process_: ManagedProcess): Promise<void> {
 function queueRebuild(databasePath: string): {
   readonly bookId: number;
   readonly sourceUpdatedAt: number;
-  readonly candidateId: string;
+  readonly buildId: string;
   readonly jobId: string;
   readonly versionId: string;
   readonly versionBefore: string;
+  readonly save: {
+    readonly duration_ms: number;
+    readonly roots_written: number;
+    readonly total_roots: number;
+  };
 } {
   const database = openDatabase(databasePath, { role: "worker" });
   try {
@@ -335,30 +341,54 @@ function queueRebuild(databasePath: string): {
     if (!book.currentVersionId || !book.draftImportId) {
       throw new Error("REFERENCE_REBUILD_CAPTURE_MISSING");
     }
-    const candidate = new DraftCandidateRepository(database).createForDocument({
-      bookId: book.id,
-      sourceUpdatedAt: readDraftHeader(
-        resolve(
-          dirname(databasePath),
-          "../books",
-          String(book.id),
-          "draft/book.json",
-        ),
-        book.id,
-      ).updated_at,
-      nowMs: Date.now(),
-      importId: book.draftImportId,
-    });
-    const command = new DraftCandidateRepository(database).buildCommand(
-      candidate.attemptId,
+    const documents = new DocumentRepository(database);
+    const target = database
+      .prepare(
+        "SELECT id FROM book_blocks WHERE book_id=? AND type='paragraph' ORDER BY ordinal LIMIT 1",
+      )
+      .get(book.id) as { id: string } | undefined;
+    if (!target) throw new Error("REFERENCE_EDIT_TARGET_MISSING");
+    const block = documents.block(book.id, target.id);
+    database.exec(
+      "CREATE TEMP TABLE edited_roots(id TEXT); CREATE TEMP TRIGGER count_edited_roots AFTER UPDATE ON main.book_blocks BEGIN INSERT INTO edited_roots VALUES (NEW.id); END;",
     );
+    const started = performance.now();
+    saveDocument({
+      database,
+      bookId: book.id,
+      expectedUpdatedAt: block.updated_at,
+      nowMs: Date.now(),
+      requestId: createOpaqueId("job"),
+      patch: {
+        block: {
+          block_id: target.id,
+          markdown: block.markdown + " (benchmark edit)",
+        },
+      },
+    });
+    const durationMs = performance.now() - started;
+    const written = database
+      .prepare("SELECT count(*) AS count FROM edited_roots")
+      .get() as { count: number };
+    const total = database
+      .prepare("SELECT count(*) AS count FROM book_blocks WHERE book_id=?")
+      .get(book.id) as { count: number };
+    if (written.count !== 1)
+      throw new Error("REFERENCE_EDIT_WRITE_SCOPE_INVALID");
+    const candidate = new BuildRepository(database).findCurrent(book.id);
+    if (!candidate) throw new Error("REFERENCE_EDIT_BUILD_MISSING");
     return Object.freeze({
       bookId: book.id,
       sourceUpdatedAt: candidate.sourceUpdatedAt,
-      candidateId: candidate.attemptId,
+      buildId: candidate.id,
       jobId: candidate.jobId,
-      versionId: command.versionId,
+      versionId: candidate.id,
       versionBefore: book.currentVersionId,
+      save: {
+        duration_ms: Math.round(durationMs * 1000) / 1000,
+        roots_written: written.count,
+        total_roots: total.count,
+      },
     });
   } finally {
     database.close();
@@ -371,17 +401,14 @@ async function publishRebuild(
 ): Promise<void> {
   const database = openDatabase(databasePath, { role: "worker" });
   try {
-    await publishCandidate({
+    await publishBuild({
       actorUserId: null,
       bookId: rebuild.bookId,
       expectedUpdatedAt: rebuild.sourceUpdatedAt,
-      candidateId: rebuild.candidateId,
+      buildId: rebuild.buildId,
       nowMs: Date.now(),
       policy: m1PublishPolicy,
-      publication: new CandidatePublicationRepository(
-        database,
-        await createStorageLayout(resolve(dirname(databasePath), "..")),
-      ),
+      publication: new BuildPublicationRepository(database),
     });
   } finally {
     database.close();
@@ -481,6 +508,11 @@ export async function benchmarkFixtureHttp(input: {
       throw new Error("REFERENCE_REBUILD_PUBLICATION_MISSING");
     }
     return Object.freeze({
+      save: rebuild.save,
+      rebuild_ms:
+        completed.finishedAtMs !== null && completed.startedAtMs !== null
+          ? completed.finishedAtMs - completed.startedAtMs
+          : null,
       concurrent_build_read: concurrentRead,
       idle_read: idleRead,
       publication: {

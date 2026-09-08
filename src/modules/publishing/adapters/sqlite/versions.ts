@@ -162,18 +162,18 @@ export class VersionRepository {
     readonly expectedSearchBlockIds: readonly string[];
     readonly manifestSchemaVersion: number;
     readonly manifestSha256: string;
-    readonly previewVersion?: string;
+    readonly previewVersion: string;
     readonly predecessorVersionId: string | null;
     readonly presentation: BookVersionPresentation;
     readonly presentationWriter: BookVersionPresentationWriter;
     readonly rendererVersion: string;
-    readonly readerVersion?: string;
-    readonly semanticDigest?: string;
+    readonly readerVersion: string;
+    readonly semanticDigest: string;
     readonly importId: string;
     readonly spool: SearchSpool;
     readonly versionId: string;
     readonly versionRelativePath: string;
-    readonly versionMarkerSha256?: string;
+    readonly versionMarkerSha256: string;
   }): BookVersionRecord {
     if (!/^[a-f0-9]{64}$/u.test(input.manifestSha256)) {
       throw new Error("MANIFEST_SHA256_INVALID");
@@ -217,12 +217,12 @@ export class VersionRepository {
           input.versionRelativePath,
           input.manifestSchemaVersion,
           input.manifestSha256,
-          input.versionMarkerSha256 ?? input.manifestSha256,
-          input.semanticDigest ?? input.manifestSha256,
+          input.versionMarkerSha256,
+          input.semanticDigest,
           input.compilerVersion,
           input.rendererVersion,
-          input.previewVersion ?? "draft-preview-v6",
-          input.readerVersion ?? "mirawind-reader-v4-tailwind-4.3.3",
+          input.previewVersion,
+          input.readerVersion,
           input.blockingDiagnosticCount ?? 0,
           input.completeAtMs,
           input.createdByJobId,
@@ -235,7 +235,7 @@ export class VersionRepository {
       const jobUpdated = this.database
         .prepare(
           `UPDATE jobs SET version_id = ?
-           WHERE id = ? AND kind = 'build_candidate'
+           WHERE id = ? AND kind = 'build_book'
              AND version_id = ?`,
         )
         .run(input.versionId, input.createdByJobId, input.versionId);

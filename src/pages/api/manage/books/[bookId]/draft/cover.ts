@@ -41,5 +41,5 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   });
   const headers = new Headers();
   applyResponsePolicy(headers, "private-api");
-  return Response.json(result, { headers, status: 202 });
+  return Response.json(result, { headers, status: 200 });
 };

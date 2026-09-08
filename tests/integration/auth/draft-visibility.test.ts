@@ -14,10 +14,11 @@ import { m1ImportExpiryMs } from "@/modules/publishing/application/publishing-ap
 import { resetRuntimeStorageForTests } from "@/composition/storage";
 
 import { GET as getDraft } from "../../../src/pages/api/manage/books/[bookId]/draft.js";
+import { POST as buildPreview } from "../../../src/pages/api/manage/books/[bookId]/build.js";
 import { GET as getDraftImage } from "../../../src/pages/api/manage/books/[bookId]/draft/images/[resourceId].js";
 import { GET as getDraftImages } from "../../../src/pages/api/manage/books/[bookId]/draft/images/index.js";
-import { GET as getPreviewAsset } from "../../../src/pages/api/manage/books/[bookId]/preview/[candidateId]/assets/[resourceId].js";
-import { GET as getPreviewPage } from "../../../src/pages/api/manage/books/[bookId]/preview/[candidateId]/pages/[pageId].js";
+import { GET as getPreviewAsset } from "../../../src/pages/api/manage/books/[bookId]/preview/[buildId]/assets/[resourceId].js";
+import { GET as getPreviewPage } from "../../../src/pages/api/manage/books/[bookId]/preview/[buildId]/pages/[pageId].js";
 import { GET as getImport } from "../../../src/pages/api/manage/imports/[importId]/index.js";
 import { GET as getJob } from "../../../src/pages/api/manage/jobs/[jobId]/index.js";
 import { createTemporaryDataRoot } from "../../helpers/data-root.js";
@@ -154,12 +155,12 @@ describe("draft resource access", () => {
           `/api/manage/books/${bookId}/preview/candidate_0123456789abcdefghij/pages/1`,
           {
             bookId: String(bookId),
-            candidateId: "candidate_0123456789abcdefghij",
+            buildId: "candidate_0123456789abcdefghij",
             pageId: "1",
           },
           {
             bookId: "987654",
-            candidateId: "candidate_0123456789abcdefghij",
+            buildId: "candidate_0123456789abcdefghij",
             pageId: "1",
           },
         ],
@@ -168,12 +169,12 @@ describe("draft resource access", () => {
           `/api/manage/books/${bookId}/preview/candidate_0123456789abcdefghij/assets/res_0123456789abcdefghij`,
           {
             bookId: String(bookId),
-            candidateId: "candidate_0123456789abcdefghij",
+            buildId: "candidate_0123456789abcdefghij",
             resourceId: "res_0123456789abcdefghij",
           },
           {
             bookId: "987654",
-            candidateId: "candidate_0123456789abcdefghij",
+            buildId: "candidate_0123456789abcdefghij",
             resourceId: "res_missing0123456789abc",
           },
         ],
@@ -191,6 +192,15 @@ describe("draft resource access", () => {
           await missingResponse.text(),
         );
       }
+
+      const deniedBuild = await hiddenResponse(
+        buildPreview as RouteHandler,
+        `/api/manage/books/${bookId}/build`,
+        { bookId: String(bookId) },
+      );
+      expect(deniedBuild.status).toBe(401);
+      expect(deniedBuild.headers.get("cache-control")).toContain("no-store");
+      expect(deniedBuild.headers.get("x-robots-tag")).toContain("noindex");
 
       const session = {
         authenticatedAtMs: Date.now(),

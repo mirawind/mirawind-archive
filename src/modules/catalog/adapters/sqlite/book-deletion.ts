@@ -17,7 +17,6 @@ import type {
 
 interface DeletableBookRow {
   alias: string | null;
-  current_candidate_id: string | null;
   current_version_id: string | null;
   deletion_requested_at: number | null;
   draft_import_id: string | null;
@@ -156,7 +155,6 @@ export function acceptBookDeletion(input: {
     const currentToken = createBookDeletionToken({
       alias: book.alias,
       bookId: book.id,
-      currentCandidateId: book.current_candidate_id,
       currentVersionId: book.current_version_id,
       draftImportId: book.draft_import_id,
       title: book.title_cache,

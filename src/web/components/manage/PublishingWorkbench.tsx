@@ -1,5 +1,13 @@
-import { DraftSaveFailure, waitForDraftSave } from "./wait-for-save";
-import { CircleAlert, FilePenLine, RotateCcw, Save, X } from "lucide-react";
+import { useAutosave, useSaveIdentity } from "./use-draft-save";
+import { DraftSaveFailure, readSaveResult } from "./save-result";
+import {
+  CircleAlert,
+  FilePenLine,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { DiagnosticTarget } from "@/domain/errors";
@@ -39,14 +47,14 @@ interface PreviewFrameMessage {
   readonly fragment: string | null;
   readonly page_id: number;
   readonly source_updated_at: number;
-  readonly candidate_id: string;
+  readonly build_id: string;
   readonly type: PreviewFrameMessageType;
 }
 
 function previewFrameMessage(
   value: unknown,
   sourceUpdatedAt: number,
-  candidateId: string,
+  buildId: string,
   pages: readonly PreviewPage[],
 ): PreviewFrameMessage | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -61,7 +69,7 @@ function previewFrameMessage(
   }
   if (
     candidate.source_updated_at !== sourceUpdatedAt ||
-    candidate.candidate_id !== candidateId ||
+    candidate.build_id !== buildId ||
     !Number.isSafeInteger(candidate.page_id) ||
     !pages.some((page) => page.page_id === candidate.page_id)
   ) {
@@ -129,6 +137,7 @@ function editableFormulaSource(markdown: string): string {
 }
 
 export function PublishingWorkbench(props: { readonly bookId: number }) {
+  const saveIdentity = useSaveIdentity();
   const [draft, setDraft] = useState<DraftView | null>(null);
   const [displayedPreview, setDisplayedPreview] =
     useState<DraftView["preview"]>(null);
@@ -152,6 +161,7 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
   const [blockEditor, setBlockEditor] = useState<DraftBlockEditor | null>(null);
   const blockEditorRef = useRef(blockEditor);
   blockEditorRef.current = blockEditor;
+  const [pendingBlockId, setPendingBlockId] = useState<string | null>(null);
   const blockDirty = Boolean(
     blockEditor && blockEditor.markdown !== blockEditor.acceptedMarkdown,
   );
@@ -180,9 +190,8 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
     const next = (await response.json()) as DraftView;
     setDraft(next);
     if (next.preview) {
-      if (lastPreviewId.current !== next.preview.candidate_id)
-        setFrameReady(false);
-      lastPreviewId.current = next.preview.candidate_id;
+      if (lastPreviewId.current !== next.preview.build_id) setFrameReady(false);
+      lastPreviewId.current = next.preview.build_id;
       setDisplayedPreview(next.preview);
       setSelectedPage((current) =>
         next.preview?.pages.some((page) => page.page_id === current)
@@ -211,6 +220,10 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
 
   const loadBlock = useCallback(
     async (blockId: string) => {
+      if (editorState.dirty || editorState.saving || editorState.conflict) {
+        setPendingBlockId(blockId);
+        return;
+      }
       if (!draft) {
         setMessage("当前预览正在更新，完成后才能编辑正文。");
         return;
@@ -258,8 +271,26 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
         );
       }
     },
-    [draft],
+    [draft, editorState.dirty, editorState.saving, editorState.conflict],
   );
+
+  useEffect(() => {
+    if (
+      pendingBlockId &&
+      !editorState.dirty &&
+      !editorState.saving &&
+      !editorState.conflict
+    ) {
+      setPendingBlockId(null);
+      void loadBlock(pendingBlockId);
+    }
+  }, [
+    pendingBlockId,
+    editorState.dirty,
+    editorState.saving,
+    editorState.conflict,
+    loadBlock,
+  ]);
 
   const reloadBlock = useCallback(async () => {
     if (!blockEditor) return;
@@ -317,7 +348,7 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
   }, [refresh]);
 
   usePolling(
-    draft?.candidate?.state === "building" || draft?.pending_save === true,
+    draft?.build?.state === "building",
     async () => {
       await refresh().catch(() => setMessage("预览状态刷新失败。"));
     },
@@ -331,7 +362,7 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
       const received = previewFrameMessage(
         event.data,
         preview.source_updated_at,
-        preview.candidate_id,
+        preview.build_id,
         preview.pages,
       );
       if (!received) return;
@@ -358,9 +389,6 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
   const activateDiagnosticTarget = useCallback(
     async (target: DiagnosticTarget) => {
       diagnosticsDialog.current?.close();
-      if (target.kind === "reprocess_verbatim") {
-        return;
-      }
       setFrameReady(false);
       setSelectedPage(target.pageId);
       setSelectedFragment(target.blockId);
@@ -376,68 +404,81 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
     [loadBlock],
   );
 
-  const saveBlock = useCallback(async () => {
-    if (
-      !draft ||
-      !blockEditor ||
-      blockEditor.loading ||
-      blockEditor.saving ||
-      blockEditor.conflict ||
-      blockEditor.markdown === blockEditor.acceptedMarkdown
-    ) {
-      return;
-    }
-    setBlockEditor((current) =>
-      current ? { ...current, error: "", saving: true } : current,
-    );
-    try {
-      const response = await fetch(
-        `/api/manage/books/${draft.book_id}/draft/blocks/${blockEditor.blockId}`,
-        {
-          body: JSON.stringify({
-            markdown: blockEditor.markdown,
-            expected_updated_at: blockEditor.updatedAt,
-          }),
-          cache: "no-store",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          method: "PATCH",
-        },
+  const saveBlock = useCallback(
+    async (closeAfter = false) => {
+      if (
+        !draft ||
+        !blockEditor ||
+        blockEditor.loading ||
+        blockEditor.saving ||
+        blockEditor.conflict
+      ) {
+        return;
+      }
+      if (blockEditor.markdown === blockEditor.acceptedMarkdown) {
+        if (closeAfter) blockDialog.current?.close();
+        return;
+      }
+      setBlockEditor((current) =>
+        current ? { ...current, error: "", saving: true } : current,
       );
-      if (response.status === 412) {
-        setBlockEditor((current) =>
-          current
-            ? {
-                ...current,
-                conflict: true,
-                error:
-                  "草稿已在其他页面更新。本地正文仍保留，请重新载入后再编辑。",
-                saving: false,
-              }
-            : current,
+      try {
+        const response = await fetch(
+          `/api/manage/books/${draft.book_id}/draft/blocks/${blockEditor.blockId}`,
+          {
+            body: JSON.stringify({
+              markdown: blockEditor.markdown,
+              expected_updated_at: blockEditor.updatedAt,
+            }),
+            cache: "no-store",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": saveIdentity({
+                book: props.bookId,
+                block: blockEditor.blockId,
+                expected: blockEditor.updatedAt,
+                markdown: blockEditor.markdown,
+              }),
+            },
+            method: "PATCH",
+          },
         );
-        return;
-      }
-      if (!response.ok) {
-        setBlockEditor((current) =>
-          current
-            ? {
-                ...current,
-                error: "正文未保存，请检查 Markdown 后重试。",
-                saving: false,
-              }
-            : current,
-        );
-        return;
-      }
-      const acceptedAt = await waitForDraftSave(response);
-      await refresh();
-      if (blockEditorRef.current?.markdown === blockEditor.markdown) {
-        blockDialog.current?.close();
-        setBlockEditor(null);
-      } else {
+        if (response.status === 412) {
+          setBlockEditor((current) =>
+            current
+              ? {
+                  ...current,
+                  conflict: true,
+                  error:
+                    "草稿已在其他页面更新。本地正文仍保留，请重新载入后再编辑。",
+                  saving: false,
+                }
+              : current,
+          );
+          return;
+        }
+        if (!response.ok) {
+          setBlockEditor((current) =>
+            current
+              ? {
+                  ...current,
+                  error: "正文未保存，请检查 Markdown 后重试。",
+                  saving: false,
+                }
+              : current,
+          );
+          return;
+        }
+        const acceptedAt = await readSaveResult(response);
+        await refresh();
+        if (
+          closeAfter &&
+          blockEditorRef.current?.markdown === blockEditor.markdown
+        ) {
+          blockDialog.current?.close();
+          return;
+        }
         setBlockEditor((current) =>
           current
             ? {
@@ -448,27 +489,61 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
               }
             : current,
         );
+        setMessage("");
+      } catch (error) {
+        setBlockEditor((current) =>
+          current
+            ? {
+                ...current,
+                conflict:
+                  error instanceof DraftSaveFailure &&
+                  error.code === "DRAFT_PRECONDITION_FAILED",
+                error:
+                  error instanceof DraftSaveFailure &&
+                  error.code === "DRAFT_PRECONDITION_FAILED"
+                    ? "草稿已更新，本地正文仍保留。"
+                    : "正文保存失败，请检查内容后重试。",
+                saving: false,
+              }
+            : current,
+        );
       }
-      setMessage("");
-    } catch (error) {
-      setBlockEditor((current) =>
-        current
-          ? {
-              ...current,
-              conflict:
-                error instanceof DraftSaveFailure &&
-                error.code === "DRAFT_PRECONDITION_FAILED",
-              error:
-                error instanceof DraftSaveFailure &&
-                error.code === "DRAFT_PRECONDITION_FAILED"
-                  ? "草稿已更新，本地正文仍保留。"
-                  : "正文保存失败，请检查内容后重试。",
-              saving: false,
-            }
-          : current,
-      );
-    }
-  }, [blockEditor, draft, refresh]);
+    },
+    [blockEditor, draft, props.bookId, refresh, saveIdentity],
+  );
+
+  useAutosave({
+    dirty: blockDirty,
+    paused: Boolean(
+      blockEditor?.loading ||
+      blockEditor?.saving ||
+      blockEditor?.conflict ||
+      editorState.dirty ||
+      editorState.saving,
+    ),
+    signature: JSON.stringify({
+      id: blockEditor?.blockId,
+      text: blockEditor?.markdown,
+    }),
+    save: () => {
+      void saveBlock();
+    },
+  });
+
+  useEffect(() => {
+    if (
+      !blockDirty &&
+      !editorState.dirty &&
+      !blockEditor?.saving &&
+      !editorState.saving
+    )
+      return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [blockDirty, editorState.dirty, blockEditor?.saving, editorState.saving]);
 
   if (!draft) {
     return (
@@ -494,9 +569,9 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
   const blockingDiagnostics = actionable.filter(
     (diagnostic) => diagnostic.severity === "error",
   );
-  const candidateState = draft.candidate?.state ?? "failed";
+  const buildState = draft.build?.state ?? "failed";
   const previewReady =
-    candidateState === "ready" &&
+    buildState === "ready" &&
     frameReady &&
     preview?.source_updated_at === draft.updated_at;
   return (
@@ -510,12 +585,12 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
         </a>
         <div className="workbench-title min-w-0 max-[480px]:col-span-full max-[480px]:row-start-2">
           <h1 className="truncate text-base font-bold">{draft.title}</h1>
-          {candidateState === "building" && (
+          {buildState === "building" && (
             <p className="text-xs text-amber-800" role="status">
               正在生成阅读预览
             </p>
           )}
-          {["canceled", "failed", "interrupted"].includes(candidateState) && (
+          {["canceled", "failed", "interrupted"].includes(buildState) && (
             <p className="text-xs text-red-800" role="alert">
               预览构建失败
             </p>
@@ -550,8 +625,7 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
             editorState.saving ||
             editorState.conflict ||
             blockDirty ||
-            Boolean(blockEditor?.saving || blockEditor?.conflict) ||
-            draft.pending_save
+            Boolean(blockEditor?.saving || blockEditor?.conflict)
           }
           draft={draft}
           onChanged={async () => {
@@ -566,8 +640,7 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
             editorState.saving ||
             editorState.conflict ||
             blockDirty ||
-            blockEditor?.saving ||
-            candidateState === "building"
+            blockEditor?.saving
           }
           onClick={() => editorRef.current?.save()}
           title={editorState.saving ? "正在保存" : "保存并更新预览"}
@@ -584,12 +657,11 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
             blockDirty ||
             Boolean(blockEditor?.saving || blockEditor?.conflict) ||
             editorState.saving ||
-            draft.pending_save ||
             blockingDiagnostics.length > 0
           }
           bookId={draft.book_id}
-          candidatePublished={draft.candidate_published}
-          candidateId={preview?.candidate_id ?? null}
+          buildPublished={draft.build_published}
+          buildId={preview?.build_id ?? null}
           updatedAt={draft.updated_at}
           compact
           onPublished={async () => {
@@ -638,7 +710,6 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
             numbering={draft.numbering}
             updatedAt={draft.updated_at}
             saveDisabled={
-              draft.pending_save ||
               blockDirty ||
               Boolean(blockEditor?.saving || blockEditor?.conflict)
             }
@@ -657,6 +728,41 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
             <h2 className="mr-auto text-base font-bold" id="document-title">
               正文预览
             </h2>
+            <button
+              className={manageQuietButton}
+              aria-label="更新预览"
+              title="更新预览"
+              type="button"
+              disabled={
+                editorState.dirty ||
+                editorState.saving ||
+                editorState.conflict ||
+                blockDirty ||
+                Boolean(blockEditor?.saving || blockEditor?.conflict)
+              }
+              onClick={async () => {
+                try {
+                  const response = await fetch(
+                    `/api/manage/books/${draft.book_id}/build`,
+                    {
+                      method: "POST",
+                      credentials: "same-origin",
+                      cache: "no-store",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        expected_updated_at: draft.updated_at,
+                      }),
+                    },
+                  );
+                  if (!response.ok) throw new Error("BUILD_REQUEST_FAILED");
+                  await refresh();
+                } catch {
+                  setMessage("无法更新预览。");
+                }
+              }}
+            >
+              <RefreshCw aria-hidden="true" size={18} />
+            </button>
             <div aria-label="预览宽度" className="flex gap-1">
               <button
                 aria-pressed={previewWidth === "desktop"}
@@ -684,10 +790,10 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
                   ? "mx-auto block w-[min(390px,100%)]"
                   : ""
               }`}
-              key={`${preview.candidate_id}:${pageId}:${navigationSerial}`}
+              key={`${preview.build_id}:${pageId}:${navigationSerial}`}
               ref={iframeRef}
               sandbox="allow-scripts"
-              src={`/api/manage/books/${draft.book_id}/preview/${preview.candidate_id}/pages/${pageId}${
+              src={`/api/manage/books/${draft.book_id}/preview/${preview.build_id}/pages/${pageId}${
                 selectedFragment
                   ? `#${encodeURIComponent(selectedFragment)}`
                   : ""
@@ -735,7 +841,8 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
         aria-labelledby="draft-block-editor-title"
         className={`workbench-mobile-dialog ${manageDialog} w-[min(48rem,calc(100vw-2rem))]`}
         onCancel={(event) => {
-          if (blockEditor?.saving) event.preventDefault();
+          event.preventDefault();
+          void saveBlock(true);
         }}
         onClose={() => {
           setBlockEditor(null);
@@ -751,7 +858,7 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
             aria-label="关闭正文编辑"
             className={manageDialogClose}
             disabled={blockEditor?.saving}
-            onClick={() => blockDialog.current?.close()}
+            onClick={() => void saveBlock(true)}
             title="关闭"
             type="button"
           >
@@ -797,6 +904,16 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
                 </p>
               )}
               <div className="flex flex-wrap justify-end gap-2">
+                {(blockEditor.conflict || blockEditor.error) && (
+                  <button
+                    className={manageQuietButton}
+                    type="button"
+                    disabled={blockEditor.saving}
+                    onClick={() => blockDialog.current?.close()}
+                  >
+                    放弃修改并关闭
+                  </button>
+                )}
                 {blockEditor.conflict && (
                   <button
                     className={manageSecondaryButton}
@@ -811,10 +928,10 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
                 <button
                   className={manageQuietButton}
                   disabled={blockEditor.saving}
-                  onClick={() => blockDialog.current?.close()}
+                  onClick={() => void saveBlock(true)}
                   type="button"
                 >
-                  取消
+                  关闭
                 </button>
                 <button
                   className={manageSecondaryButton}
@@ -822,10 +939,9 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
                     blockEditor.loading ||
                     blockEditor.saving ||
                     blockEditor.conflict ||
-                    blockEditor.markdown === blockEditor.acceptedMarkdown ||
-                    draft.pending_save
+                    blockEditor.markdown === blockEditor.acceptedMarkdown
                   }
-                  onClick={() => void saveBlock()}
+                  onClick={() => void saveBlock(true)}
                   type="button"
                 >
                   <FilePenLine aria-hidden="true" size={18} />

@@ -23,7 +23,7 @@ describe("worker loop idle maintenance", () => {
     };
 
     await runWorkerLoop({
-      candidates: {} as never,
+      builds: {} as never,
       database: { prepare: () => ({ all: () => [] }) } as never,
       drafts: {} as never,
       imports: {} as never,

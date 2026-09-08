@@ -140,7 +140,7 @@ export class BookDeletionRepository {
       .prepare(
         `UPDATE books
          SET draft_import_id = NULL,
-             current_candidate_id = NULL, current_version_id = NULL
+             current_version_id = NULL
          WHERE id = ? AND deletion_requested_at IS NOT NULL`,
       )
       .run(bookId);

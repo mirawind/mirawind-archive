@@ -1,8 +1,7 @@
 export const userJobKinds = [
   "analyze_import",
   "prepare_draft",
-  "save_draft",
-  "build_candidate",
+  "build_book",
   "purge_book",
 ] as const;
 
@@ -56,21 +55,13 @@ const jobPhases = Object.freeze({
     "organize_structure",
     ...terminalPhases,
   ],
-  build_candidate: [
+  build_book: [
     "queued",
     "starting",
     "compile_book",
     "render_pages",
     "build_search",
-    "finalize_candidate",
-    ...terminalPhases,
-  ],
-  save_draft: [
-    "queued",
-    "starting",
-    "validate_edit",
-    "prepare_save",
-    "save_document",
+    "finalize_build",
     ...terminalPhases,
   ],
   purge_book: [

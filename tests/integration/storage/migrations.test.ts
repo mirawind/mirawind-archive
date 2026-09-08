@@ -106,7 +106,7 @@ describe("checksummed migrations", () => {
     });
     expect(
       database.prepare("SELECT identity FROM database_baseline").get(),
-    ).toEqual({ identity: "mirawind-content-ir-v1" });
+    ).toEqual({ identity: "mirawind-block-storage-v1" });
 
     const names = (
       database
@@ -121,11 +121,12 @@ describe("checksummed migrations", () => {
         "database_baseline",
         "books",
         "book_resources",
-        "save_draft_requests",
-        "draft_candidates",
+        "book_documents",
+        "book_blocks",
+        "book_nodes",
+        "document_commands",
         "original_files",
         "imports",
-        "import_candidates",
         "book_versions",
         "book_version_presentations",
         "book_deletions",

@@ -70,30 +70,40 @@ describe("ready-version and search index transaction", () => {
         bookId: book.id,
         capturedSourceUpdatedAt: 1000,
         importId: imported.id,
-        kind: "build_candidate",
+        kind: "build_book",
         nowMs: 5,
         versionId,
       });
       const versions = new VersionRepository(database);
+      jobs.claimNext({ leaseOwner: "test", nowMs: 5 });
       const ready = versions.registerReadyWithSearch({
         bookId: book.id,
-        compilerVersion: "compiler-v7",
+        compilerVersion: "compiler-v8",
         completeAtMs: 6,
         sourceUpdatedAt: 1000,
         createdByJobId: firstJob.id,
         expectedSearchBlockIds: [blockId],
-        manifestSchemaVersion: 4,
+        manifestSchemaVersion: 5,
         manifestSha256: hash,
+        versionMarkerSha256: hash,
+        semanticDigest: hash,
+        previewVersion: "draft-preview-v8",
+        readerVersion: "mirawind-reader-v5-tailwind-4.3.3",
         predecessorVersionId: null,
         presentation: presentationForTest(book.id, versionId),
         presentationWriter: new BookPresentationRepository(database),
-        rendererVersion: "semantic-html-v7-katex-0.18.1",
+        rendererVersion: "semantic-html-v8-katex-0.18.1",
         importId: imported.id,
         spool: spool({ bookId: book.id, versionId }),
         versionId,
-        versionRelativePath: `books/1/versions/${versionId}`,
+        versionRelativePath: `books/1/builds/${versionId}`,
       });
       expect(ready.state).toBe("ready");
+      jobs.completeSuccess({
+        jobId: firstJob.id,
+        leaseOwner: "test",
+        nowMs: 6,
+      });
       expect(jobs.get(firstJob.id)?.versionId).toBe(versionId);
       expect(
         database
@@ -112,28 +122,32 @@ describe("ready-version and search index transaction", () => {
         capturedSourceUpdatedAt: 1000,
         capturedCurrentVersionId: versionId,
         importId: imported.id,
-        kind: "build_candidate",
+        kind: "build_book",
         nowMs: 7,
         versionId: secondVersionId,
       });
       expect(() =>
         versions.registerReadyWithSearch({
           bookId: book.id,
-          compilerVersion: "compiler-v7",
+          compilerVersion: "compiler-v8",
           completeAtMs: 8,
           sourceUpdatedAt: 1000,
           createdByJobId: secondJob.id,
           expectedSearchBlockIds: ["blk_search_index_missing_0001"],
-          manifestSchemaVersion: 4,
+          manifestSchemaVersion: 5,
           manifestSha256: hash,
+          versionMarkerSha256: hash,
+          semanticDigest: hash,
+          previewVersion: "draft-preview-v8",
+          readerVersion: "mirawind-reader-v5-tailwind-4.3.3",
           predecessorVersionId: versionId,
           presentation: presentationForTest(book.id, secondVersionId),
           presentationWriter: new BookPresentationRepository(database),
-          rendererVersion: "semantic-html-v7-katex-0.18.1",
+          rendererVersion: "semantic-html-v8-katex-0.18.1",
           importId: imported.id,
           spool: spool({ bookId: book.id, versionId: secondVersionId }),
           versionId: secondVersionId,
-          versionRelativePath: `books/1/versions/${secondVersionId}`,
+          versionRelativePath: `books/1/builds/${secondVersionId}`,
         }),
       ).toThrow("SEARCH_BLOCK_ID_SET_MISMATCH");
       expect(versions.find(secondVersionId)).toBeNull();

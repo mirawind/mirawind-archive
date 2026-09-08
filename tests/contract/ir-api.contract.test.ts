@@ -8,7 +8,7 @@ const document = SwaggerParser.dereference(
 );
 const ajv = addFormats(new Ajv2020({ strict: false }));
 const timestamp = 1788739200000;
-const candidateId = "candidate_000000000000000000000001";
+const buildId = "ver_000000000000000000000001";
 function at(
   value: unknown,
   ...keys: (string | number)[]
@@ -47,7 +47,7 @@ describe("IR management HTTP contract", () => {
     ])
       expect(validate(invalid)).toBe(false);
     expect(
-      at(patch, "responses", 202, "headers", "Cache-Control", "schema").const,
+      at(patch, "responses", 200, "headers", "Cache-Control", "schema").const,
     ).toBe("private, no-store");
     expect(at(patch, "responses")[412]).toBeDefined();
   });
@@ -62,43 +62,33 @@ describe("IR management HTTP contract", () => {
       at(operation, "requestBody", "content", "application/json", "schema"),
     );
     expect(
-      validate({ expected_updated_at: timestamp, candidate_id: candidateId }),
+      validate({ expected_updated_at: timestamp, build_id: buildId }),
     ).toBe(true);
     expect(validate({ expected_updated_at: timestamp })).toBe(false);
-    expect(validate({ candidate_id: candidateId })).toBe(false);
+    expect(validate({ build_id: buildId })).toBe(false);
     expect(at(operation, "responses")[409]).toBeDefined();
   });
-  it("describes asynchronous receipts and accepted timestamps on tasks", async () => {
+  it("returns a committed document timestamp independently of build tasks", async () => {
     const api = await document;
     const validate = ajv.compile(
       at(api, "components", "schemas", "DraftUpdateAccepted"),
     );
-    expect(
-      validate({
-        job_id: "job_000000000000000000000001",
-        state: "queued",
-        expected_updated_at: timestamp,
-      }),
-    ).toBe(true);
-    expect(validate({ state: "queued", expected_updated_at: timestamp })).toBe(
-      false,
-    );
-    const job = at(api, "components", "schemas", "Job", "properties");
-    expect(at(job, "kind").enum).toContain("save_draft");
-    expect(at(job, "accepted_updated_at").maximum).toBe(8640000000000000);
+    expect(validate({ updated_at: timestamp })).toBe(true);
+    expect(validate({ updated_at: "invalid" })).toBe(false);
+    expect(validate({})).toBe(false);
   });
   it("keeps candidate pages private and requires signed resource authorization", async () => {
     const api = await document;
     const page = at(
       api,
       "paths",
-      "/api/manage/books/{bookId}/preview/{candidateId}/pages/{pageId}",
+      "/api/manage/books/{bookId}/preview/{buildId}/pages/{pageId}",
       "get",
     );
     const asset = at(
       api,
       "paths",
-      "/api/manage/books/{bookId}/preview/{candidateId}/assets/{resourceId}",
+      "/api/manage/books/{bookId}/preview/{buildId}/assets/{resourceId}",
       "get",
     );
     for (const operation of [page, asset]) {

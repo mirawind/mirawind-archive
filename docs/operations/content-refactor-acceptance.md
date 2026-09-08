@@ -1,5 +1,9 @@
 # Structured Content Refactor Acceptance
 
+Historical evidence for D-138, superseded by D-140/D-141. The mutable-file drafts, asynchronous
+save tasks, independent candidates and runtime data described here have been retired. This is
+not acceptance evidence for the current block-storage runtime; see `block-storage-acceptance.md`.
+
 Date: 2026-09-08. Governing decisions: D-138/D-139. This records the local implementation
 and verification, not an old-library migration or an independently released deployment.
 

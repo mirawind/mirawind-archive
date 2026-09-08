@@ -14,13 +14,13 @@ import {
   type StructureEditorHandle,
   type StructureEditorState,
 } from "@/web/components/manage/StructureEditor";
-import { waitForDraftSave } from "@/web/components/manage/wait-for-save";
+import { readSaveResult } from "@/web/components/manage/save-result";
 
-vi.mock("@/web/components/manage/wait-for-save", async (importOriginal) => ({
+vi.mock("@/web/components/manage/save-result", async (importOriginal) => ({
   ...(await importOriginal<
-    typeof import("@/web/components/manage/wait-for-save")
+    typeof import("@/web/components/manage/save-result")
   >()),
-  waitForDraftSave: vi.fn(),
+  readSaveResult: vi.fn(),
 }));
 afterEach(() => {
   cleanup();
@@ -48,9 +48,9 @@ const field = () =>
   screen.getAllByLabelText("标题", { exact: true })[0] as HTMLInputElement;
 
 describe("structure save state", () => {
-  it("retains typing made while the worker saves the submitted edit", async () => {
+  it("retains typing made while the server saves the submitted edit", async () => {
     let resolveSave!: (timestamp: number) => void;
-    vi.mocked(waitForDraftSave).mockImplementation(
+    vi.mocked(readSaveResult).mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveSave = resolve;
@@ -61,10 +61,7 @@ describe("structure save state", () => {
       vi
         .fn()
         .mockResolvedValue(
-          Response.json(
-            { job_id: "job_000000000000000000000001" },
-            { status: 202 },
-          ),
+          Response.json({ updated_at: 2000 }, { status: 200 }),
         ),
     );
     const ref = createRef<StructureEditorHandle>();
@@ -96,7 +93,7 @@ describe("structure save state", () => {
     );
     fireEvent.change(field(), { target: { value: "Submitted" } });
     act(() => ref.current?.save());
-    await waitFor(() => expect(waitForDraftSave).toHaveBeenCalled());
+    await waitFor(() => expect(readSaveResult).toHaveBeenCalled());
     fireEvent.change(field(), { target: { value: "Typed later" } });
     await act(async () => resolveSave(2000));
     await waitFor(() =>
@@ -140,16 +137,13 @@ describe("structure save state", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("clears a no-op edit without requiring a new timestamp", async () => {
-    vi.mocked(waitForDraftSave).mockResolvedValue(1000);
+    vi.mocked(readSaveResult).mockResolvedValue(1000);
     vi.stubGlobal(
       "fetch",
       vi
         .fn()
         .mockResolvedValue(
-          Response.json(
-            { job_id: "job_000000000000000000000001" },
-            { status: 202 },
-          ),
+          Response.json({ updated_at: 2000 }, { status: 200 }),
         ),
     );
     const ref = createRef<StructureEditorHandle>();

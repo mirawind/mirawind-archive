@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
 
-const identity = "mirawind-reader-v4-tailwind-4.3.3";
+const identity = "mirawind-reader-v5-tailwind-4.3.3";
 const mermaidIdentity = "mirawind-mermaid-11.16.0";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputFlag = process.argv.indexOf("--output");

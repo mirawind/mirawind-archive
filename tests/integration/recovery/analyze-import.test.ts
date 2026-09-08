@@ -61,11 +61,12 @@ describe("analyze_import handler", () => {
       expect(artifact).toMatchObject({
         decision: "automatic",
         reason: "mineru-v2",
-        selectedCandidateId: expect.stringMatching(/^cand_/u),
+        document: {
+          path: "wrapper/content_list_v2.json",
+          size: expect.any(Number),
+        },
       });
-      expect(artifact.candidates[0]?.normalizedPath).toBe(
-        "wrapper/content_list_v2.json",
-      );
+      expect(artifact.document?.path).toBe("wrapper/content_list_v2.json");
       expect(artifactText).not.toContain(dataRoot.path);
       await expect(
         access(
@@ -95,10 +96,10 @@ describe("analyze_import handler", () => {
           repository: imports,
         }),
       ).toMatchObject({
-        selectedCandidateId: artifact.selectedCandidateId,
+        sourcePath: artifact.document?.path,
         state: "preparing",
       });
-      expect(imports.candidates(imported.id)).toHaveLength(1);
+      expect(imports.require(imported.id).sourcePath).toBeTruthy();
     }));
 
   it("rejects missing MinerU v2 content and cleans the extraction", () =>
@@ -128,7 +129,7 @@ describe("analyze_import handler", () => {
           repository: imports,
         }),
       ).toMatchObject({
-        selectedCandidateId: null,
+        sourcePath: null,
         state: "rejected",
         safeErrorCode: "IMPORT_MINERU_JSON_MISSING",
       });

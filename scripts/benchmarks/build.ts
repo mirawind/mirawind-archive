@@ -23,8 +23,8 @@ import { setBookAccess } from "@/modules/catalog/application/commands/set-book-a
 import { applyMigrations } from "../../src/platform/sqlite/migrate.js";
 import { loadMigrationManifest } from "../../src/platform/sqlite/migration-manifest.js";
 import { openDatabase } from "../../src/platform/sqlite/connection.js";
-import { CandidatePublicationRepository } from "../../src/modules/publishing/adapters/sqlite/candidate-publication.js";
-import { DraftCandidateRepository } from "../../src/modules/publishing/adapters/sqlite/draft-candidate-repository.js";
+import { BuildPublicationRepository } from "../../src/modules/publishing/adapters/sqlite/build-publication.js";
+import { BuildRepository } from "../../src/modules/publishing/adapters/sqlite/builds.js";
 import { DraftRepository } from "../../src/modules/publishing/adapters/sqlite/drafts.js";
 import { ImportRepository } from "../../src/modules/publishing/adapters/sqlite/imports.js";
 import {
@@ -35,7 +35,7 @@ import { ImportUploadService } from "../../src/modules/publishing/adapters/files
 import {
   m1ImportExpiryMs,
   m1PublishPolicy,
-  publishCandidate,
+  publishBuild,
 } from "../../src/modules/publishing/application/publishing-api.js";
 import { createStorageLayout } from "../../src/platform/filesystem/storage-layout.js";
 import { parsePipelineProfileArtifact } from "../../src/observability/pipeline-profile.js";
@@ -243,7 +243,7 @@ function safeFailureCode(error: unknown): string {
       return code;
     }
   }
-  if (error instanceof RangeError) return "CANDIDATE_RANGE_LIMIT_EXCEEDED";
+  if (error instanceof RangeError) return "BUILD_RANGE_LIMIT_EXCEEDED";
   const message = error instanceof Error ? error.message : "";
   const match = /\b[A-Z][A-Z0-9_]{2,79}\b/u.exec(message);
   return match?.[0] ?? "BENCHMARK_FIXTURE_FAILED";
@@ -607,18 +607,16 @@ async function benchmarkFixture(
     if (imported.bookId === null) throw new Error("BENCHMARK_BOOK_ID_MISSING");
 
     const drafts = new DraftRepository(database);
-    const candidates = new DraftCandidateRepository(database);
+    const candidates = new BuildRepository(database);
     const candidate = await waitFor(
       () => {
         const current = candidates.findCurrent(imported.bookId as number);
-        if (current?.state === "ready" && current.versionId) return current;
+        if (current?.state === "ready" && current.id) return current;
         if (
           current &&
           ["failed", "canceled", "interrupted"].includes(current.state)
         )
-          throw new Error(
-            current.safeErrorCode ?? "BENCHMARK_CANDIDATE_FAILED",
-          );
+          throw new Error(current.safeErrorCode ?? "BENCHMARK_BUILD_FAILED");
         const candidateJob = current ? jobs.get(current.jobId) : null;
         if (
           candidateJob &&
@@ -631,20 +629,20 @@ async function benchmarkFixture(
       `fixture ${fixture.id} candidate`,
     );
     const book = drafts.requireBook(imported.bookId);
-    if (!book.draftImportId || !candidate.versionId) {
+    if (!book.draftImportId || !candidate.id) {
       throw new Error("BENCHMARK_DRAFT_CAPTURE_MISSING");
     }
     const previewReadyAt = performance.now();
 
     const publishRequestedAt = performance.now();
-    await publishCandidate({
+    await publishBuild({
       actorUserId: null,
       bookId: book.id,
       expectedUpdatedAt: candidate.sourceUpdatedAt,
-      candidateId: candidate.attemptId,
+      buildId: candidate.id,
       nowMs: Date.now(),
       policy: m1PublishPolicy,
-      publication: new CandidatePublicationRepository(database, layout),
+      publication: new BuildPublicationRepository(database),
     });
     setBookAccess({
       access: "public",

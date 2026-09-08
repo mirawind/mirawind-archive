@@ -178,7 +178,7 @@ describe("IR pages and manifest", () => {
   it("builds a closed manifest from the same timestamp and visible navigation", () => {
     const manifest = manifestFor(fixture());
     expect(manifest).toMatchObject({
-      schema_version: 4,
+      schema_version: 5,
       book_id: 1,
       source_updated_at: 1000,
       version_id: versionId,

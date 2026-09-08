@@ -29,7 +29,7 @@ import {
   setupPublicationFixture,
   publishReadyCandidateForTest,
 } from "../../helpers/publication";
-import { queueDraftSave } from "@/modules/publishing/adapters/filesystem/queue-draft-save";
+import { saveDocument } from "@/modules/publishing/adapters/sqlite/save-document";
 
 function acceptBookDeletion(
   input: Omit<
@@ -104,7 +104,7 @@ describe("permanent book cleanup", () => {
         .prepare(
           `INSERT INTO imports (
             id, original_name, state, upload_rel_path, upload_size_bytes, upload_sha256,
-            selected_candidate_id, book_id, safe_error_code,
+            source_path, book_id, safe_error_code,
             created_at, updated_at, expires_at
           ) VALUES (?, 'fixture.zip', 'draft_ready', ?, 3, ?, NULL, ?, NULL, 1000, 1000, 9000)`,
         )
@@ -123,7 +123,6 @@ describe("permanent book cleanup", () => {
         mutationToken: createBookDeletionToken({
           alias: book.alias,
           bookId: book.id,
-          currentCandidateId: book.currentCandidateId,
           currentVersionId: book.currentVersionId,
           draftImportId: book.draftImportId,
           title: book.title,
@@ -198,7 +197,7 @@ describe("permanent book cleanup", () => {
         );
       database
         .prepare(
-          "INSERT INTO book_resources (id,book_id,storage_rel_path,size_bytes,sha256,created_at) VALUES (?,?,?,3,?,1400)",
+          "INSERT INTO book_resources (id,book_id,storage_rel_path,media_type,size_bytes,sha256,created_at) VALUES (?,?,?,'image/png',3,?,1400)",
         )
         .run(
           "res_fullgraphfixture0001",
@@ -206,9 +205,9 @@ describe("permanent book cleanup", () => {
           `books/${book.id}/assets/res_fullgraphfixture0001.png`,
           "e".repeat(64),
         );
-      queueDraftSave({
+      saveDocument({
+        requestId: "save_before_delete_0001",
         database,
-        layout: dataRoot.layout,
         bookId: book.id,
         expectedUpdatedAt: fixture.document.updated_at,
         patch: { metadata: { title: "Pending edit" } },
@@ -224,7 +223,6 @@ describe("permanent book cleanup", () => {
         mutationToken: createBookDeletionToken({
           alias: current.alias,
           bookId: current.id,
-          currentCandidateId: current.currentCandidateId,
           currentVersionId: current.currentVersionId,
           draftImportId: current.draftImportId,
           title: current.title,
@@ -251,8 +249,10 @@ describe("permanent book cleanup", () => {
         "books",
         "imports",
         "book_resources",
-        "save_draft_requests",
-        "draft_candidates",
+        "book_documents",
+        "book_blocks",
+        "book_nodes",
+        "document_commands",
         "original_files",
         "book_versions",
         "book_version_presentations",
@@ -343,7 +343,6 @@ describe("permanent book cleanup", () => {
         mutationToken: createBookDeletionToken({
           alias: null,
           bookId: book.id,
-          currentCandidateId: null,
           currentVersionId: null,
           draftImportId: null,
           title: book.title,
@@ -393,7 +392,6 @@ describe("permanent book cleanup", () => {
         mutationToken: createBookDeletionToken({
           alias: book.alias,
           bookId: book.id,
-          currentCandidateId: null,
           currentVersionId: null,
           draftImportId: null,
           title: book.title,

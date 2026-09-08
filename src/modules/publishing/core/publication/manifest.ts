@@ -8,9 +8,9 @@ import type { TransientDocumentNode } from "../preparation/document-model";
 
 export const compilerIdentity = Object.freeze({
   name: "mirawind-book-compiler" as const,
-  renderer_version: "semantic-html-v7-katex-0.18.1",
+  renderer_version: "semantic-html-v8-katex-0.18.1",
   text_normalization_version: 2,
-  version: "compiler-v7",
+  version: "compiler-v8",
 });
 export interface ManifestSourceFile {
   readonly path: string;
@@ -106,7 +106,7 @@ export function buildDocumentManifest(input: {
     }),
   );
   return validateDocumentManifest({
-    schema_version: 4,
+    schema_version: 5,
     book_id: input.bookId,
     source_updated_at: input.book.book.updated_at,
     version_id: input.versionId,

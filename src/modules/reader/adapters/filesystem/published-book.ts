@@ -324,7 +324,7 @@ export class PublishedBookService {
       ...book,
       mediaType: resource.media_type,
       resourceId: input.resourceId,
-      resourceRelativePath: `${row.requested_version_rel_path}/${resource.output_path}`,
+      resourceRelativePath: `books/${row.id}/${resource.output_path}`,
       sha256: resource.sha256,
       sizeBytes: resource.size,
       versionId: input.versionId,
@@ -399,7 +399,7 @@ export class PublishedBookService {
       fileId: row.file_id,
       mediaType: row.media_type,
       originalName: row.original_name,
-      originalRelativePath: `${book.versionRelativePath}/originals/${row.file_id}`,
+      originalRelativePath: `books/${book.bookId}/originals/${row.file_id}`,
       sha256: row.sha256,
       sizeBytes: row.size_bytes,
     });

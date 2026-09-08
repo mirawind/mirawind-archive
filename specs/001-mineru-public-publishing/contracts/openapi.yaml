@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: Mirawind MinerU Publishing API
-  version: 0.2.0
+  version: 3.0.0
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
   description:
     Single MinerU content-list v2 ZIP ingestion into editable IR v1, timestamped saves and
-    candidate-bound publication. Management responses require the sole administrator and prohibit
+    build-bound publication. Management responses require the sole administrator and prohibit
     caching and indexing. Better Auth owns its authentication protocol endpoints.
 servers:
   - url: https://library.example.test
@@ -17,7 +17,7 @@ tags:
   - name: Imports
     description: Single-book MinerU v2 ZIP upload and analysis.
   - name: Drafts
-    description: Structured drafts, asynchronous saves, candidate previews and publication.
+    description: Transactional block drafts, asynchronous preview builds and publication.
   - name: Jobs
     description: Sole-administrator durable task inspection and control.
 paths:
@@ -344,7 +344,7 @@ paths:
       tags:
         - Imports
       operationId: getImport
-      summary: Inspect import state, safe candidates and diagnostics
+      summary: Inspect import state, selected v2 document and diagnostics
       security:
         - cookieAuth: []
       parameters:
@@ -444,7 +444,7 @@ paths:
       tags:
         - Drafts
       operationId: getBookDraft
-      summary: Read the bounded editable IR view, timestamp, current candidate and diagnostics
+      summary: Read the editable structure, timestamp, current build and diagnostics
       security:
         - cookieAuth: []
       parameters:
@@ -467,12 +467,18 @@ paths:
       tags:
         - Drafts
       operationId: saveDraft
-      summary: Queue a timestamp-checked structured draft save
+      summary: Commit a timestamp-checked structured draft edit
       security:
         - cookieAuth: []
       parameters:
         - $ref: "#/components/parameters/BookId"
         - $ref: "#/components/parameters/Origin"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{16,100}$
       requestBody:
         required: true
         content:
@@ -642,8 +648,8 @@ paths:
                       type: string
                       maxLength: 4194304
       responses:
-        "202":
-          description: Durable save queued; body acceptance and preview building happen asynchronously.
+        "200":
+          description: The structured draft has been committed. Preview construction is independent.
           headers:
             Cache-Control:
               schema:
@@ -652,7 +658,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DraftUpdateAccepted"
+                type: object
+                additionalProperties: false
+                required:
+                  - updated_at
+                properties:
+                  updated_at: &a1
+                    type: integer
+                    minimum: 0
+                    maximum: 8640000000000000
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -674,15 +688,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/manage/books/{bookId}/build:
+    post:
+      tags:
+        - Drafts
+      operationId: buildBookPreview
+      summary: Request a preview build of the saved document
+      description: Administrator-only and same-origin. Coalesces queued work and flushes its debounce. Responses are never cached or indexed.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - $ref: "#/components/parameters/Origin"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - expected_updated_at
+              properties:
+                expected_updated_at:
+                  type: integer
+                  minimum: 0
+                  maximum: 8640000000000000
+      responses:
+        "202":
+          description: Preview build requested
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - build_id
+                  - job_id
+                properties:
+                  build_id:
+                    type: string
+                  job_id:
+                    type: string
+        "404":
+          $ref: "#/components/responses/HiddenOrMissingJson"
+        "412":
+          description: The document changed since it was read
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/manage/books/{bookId}/publish:
     post:
       tags:
         - Drafts
       operationId: publishBook
-      summary: Promote the current ready candidate
+      summary: Publish the current ready build
       description:
-        Promotes only the submitted current ready candidate. Pending saves, mismatched source
-        timestamps and failed integrity checks prevent publication. Published content and book
+        Promotes only the submitted current ready build. Mismatched source timestamps, failed
+        builds and blocking diagnostics prevent publication. Published content and book
         access remain unchanged on failure.
       security:
         - cookieAuth: []
@@ -698,15 +772,15 @@ paths:
               additionalProperties: false
               required:
                 - expected_updated_at
-                - candidate_id
+                - build_id
               properties:
                 expected_updated_at:
                   type: integer
                   minimum: 0
                   maximum: 8640000000000000
-                candidate_id:
+                build_id:
                   type: string
-                  pattern: ^candidate_[A-Za-z0-9_-]{16,80}$
+                  pattern: ^ver_[A-Za-z0-9_-]{16,80}$
       responses:
         "200":
           description: Candidate published atomically
@@ -744,62 +818,6 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
         "412":
-          $ref: "#/components/responses/Conflict"
-  /api/manage/books/{bookId}/reprocess:
-    post:
-      tags:
-        - Drafts
-      operationId: reprocessDraftSource
-      summary: Queue an IR draft save prepared again from its retained original MinerU ZIP
-      description:
-        Reprocessing uses the save conflict and recovery protocol; published versions remain
-        immutable.
-      security:
-        - cookieAuth: []
-      parameters:
-        - $ref: "#/components/parameters/BookId"
-        - $ref: "#/components/parameters/Origin"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-                - expected_updated_at
-                - profile
-              properties:
-                profile:
-                  type: string
-                  enum:
-                    - verbatim-v1
-                    - zh-smart-v2
-                expected_updated_at:
-                  type: integer
-                  minimum: 0
-                  maximum: 8640000000000000
-      responses:
-        "202":
-          description: Durable save queued; body acceptance and preview building happen asynchronously.
-          headers:
-            Cache-Control:
-              schema:
-                type: string
-                const: private, no-store
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DraftUpdateAccepted"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFoundJson"
-        "409":
           $ref: "#/components/responses/Conflict"
   /api/manage/books/{bookId}/access:
     patch:
@@ -952,7 +970,7 @@ paths:
           $ref: "#/components/responses/NotFoundJson"
         "409":
           $ref: "#/components/responses/Conflict"
-  /api/manage/books/{bookId}/preview/{candidateId}/pages/{pageId}:
+  /api/manage/books/{bookId}/preview/{buildId}/pages/{pageId}:
     get:
       tags:
         - Drafts
@@ -962,7 +980,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: "#/components/parameters/BookId"
-        - $ref: "#/components/parameters/CandidateId"
+        - $ref: "#/components/parameters/BuildId"
         - $ref: "#/components/parameters/PageId"
       responses:
         "200":
@@ -982,17 +1000,17 @@ paths:
                 type: string
         "404":
           $ref: "#/components/responses/HiddenOrMissingHtml"
-  /api/manage/books/{bookId}/preview/{candidateId}/assets/{resourceId}:
+  /api/manage/books/{bookId}/preview/{buildId}/assets/{resourceId}:
     get:
       tags:
         - Drafts
       operationId: readDraftPreviewAsset
-      summary: Read a candidate-bound resource using a session-bound signed authorization
+      summary: Read a build-bound resource using a session-bound signed authorization
       security:
         - previewAuthorization: []
       parameters:
         - $ref: "#/components/parameters/BookId"
-        - $ref: "#/components/parameters/CandidateId"
+        - $ref: "#/components/parameters/BuildId"
         - $ref: "#/components/parameters/ResourceId"
       responses:
         "200":
@@ -1072,6 +1090,12 @@ paths:
         - $ref: "#/components/parameters/BookId"
         - $ref: "#/components/parameters/Origin"
         - $ref: "#/components/parameters/BlockId"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{16,100}$
       requestBody:
         required: true
         content:
@@ -1091,8 +1115,8 @@ paths:
                   type: string
                   maxLength: 4194304
       responses:
-        "202":
-          description: Durable save queued; body acceptance and preview building happen asynchronously.
+        "200":
+          description: The structured draft has been committed. Preview construction is independent.
           headers:
             Cache-Control:
               schema:
@@ -1104,21 +1128,10 @@ paths:
                 type: object
                 additionalProperties: false
                 required:
-                  - job_id
-                  - state
-                  - expected_updated_at
+                  - updated_at
                   - selected_block_id
                 properties:
-                  job_id:
-                    type: string
-                    pattern: ^job_[A-Za-z0-9_-]{16,80}$
-                  state:
-                    type: string
-                    const: queued
-                  expected_updated_at:
-                    type: integer
-                    minimum: 0
-                    maximum: 8640000000000000
+                  updated_at: *a1
                   selected_block_id:
                     type: string
                     pattern: ^blk_[A-Za-z0-9_-]{16,80}$
@@ -1148,7 +1161,7 @@ paths:
       tags:
         - Drafts
       operationId: uploadDraftCover
-      summary: Queue an uploaded cover as a draft save
+      summary: Commit an uploaded cover and schedule a preview build
       security:
         - cookieAuth: []
       parameters:
@@ -1172,8 +1185,8 @@ paths:
                   type: string
                   pattern: ^[0-9]+$
       responses:
-        "202":
-          description: Durable save queued; body acceptance and preview building happen asynchronously.
+        "200":
+          description: The structured draft has been committed. Preview construction is independent.
           headers:
             Cache-Control:
               schema:
@@ -1185,21 +1198,10 @@ paths:
                 type: object
                 additionalProperties: false
                 required:
-                  - job_id
-                  - state
-                  - expected_updated_at
+                  - updated_at
                   - resource_id
                 properties:
-                  job_id:
-                    type: string
-                    pattern: ^job_[A-Za-z0-9_-]{16,80}$
-                  state:
-                    type: string
-                    const: queued
-                  expected_updated_at:
-                    type: integer
-                    minimum: 0
-                    maximum: 8640000000000000
+                  updated_at: *a1
                   resource_id:
                     type: string
                     pattern: ^res_[A-Za-z0-9_-]{16,80}$
@@ -1239,7 +1241,7 @@ components:
       name: authorization
       description:
         Time-limited HMAC authorization bound to the active administrator session, book,
-        candidate and resource.
+        build and resource.
   parameters:
     BookKey:
       name: bookKey
@@ -1318,13 +1320,13 @@ components:
       schema:
         type: string
         format: uri
-    CandidateId:
-      name: candidateId
+    BuildId:
+      name: buildId
       in: path
       required: true
       schema:
         type: string
-        pattern: ^candidate_[A-Za-z0-9_-]{16,80}$
+        pattern: ^ver_[A-Za-z0-9_-]{16,80}$
     BlockId:
       name: blockId
       in: path
@@ -1516,7 +1518,7 @@ components:
               block_id:
                 type: string
                 maxLength: 100
-              candidate_id:
+              build_id:
                 type: string
                 maxLength: 100
               field:
@@ -1580,46 +1582,12 @@ components:
         taskUrl:
           type: string
           const: /manage/tasks
-    Candidate:
-      type: object
-      additionalProperties: false
-      required:
-        - candidate_id
-        - display_path
-        - confidence
-        - evidence
-        - diagnostics
-      properties:
-        candidate_id:
-          type: string
-          pattern: ^cand_[A-Za-z0-9_-]{16,80}$
-        display_path:
-          type: string
-          maxLength: 2048
-        confidence:
-          type: string
-          enum:
-            - high
-            - ambiguous
-        evidence:
-          type: array
-          maxItems: 100
-          items:
-            type: string
-            maxLength: 500
-        diagnostics:
-          type: array
-          maxItems: 1000
-          items:
-            type: string
-            maxLength: 500
     Import:
       type: object
       additionalProperties: false
       required:
         - import_id
         - state
-        - candidates
         - current_job
         - source_name
         - preview
@@ -1643,11 +1611,6 @@ components:
             - rejected
             - canceled
             - expired
-        candidates:
-          type: array
-          maxItems: 20000
-          items:
-            $ref: "#/components/schemas/Candidate"
         current_job:
           anyOf:
             - $ref: "#/components/schemas/Job"
@@ -1678,10 +1641,6 @@ components:
                 - "null"
               minimum: 0
               maximum: 8640000000000000
-        selected_candidate_id:
-          type:
-            - string
-            - "null"
         book_id:
           type:
             - integer
@@ -1698,6 +1657,11 @@ components:
         updated_at:
           type: string
           format: date-time
+        source_path:
+          type:
+            - string
+            - "null"
+          maxLength: 2048
     Draft:
       type: object
       additionalProperties: false
@@ -1706,8 +1670,7 @@ components:
         - alias
         - boundaries
         - book_id
-        - candidate
-        - candidate_published
+        - build_published
         - updated_at
         - diagnostics
         - metadata
@@ -1716,7 +1679,7 @@ components:
         - preview
         - structure
         - title
-        - pending_save
+        - build
       properties:
         access:
           type: string
@@ -1747,56 +1710,7 @@ components:
         book_id:
           type: integer
           minimum: 1
-        candidate:
-          oneOf:
-            - type: object
-              additionalProperties: false
-              required:
-                - attempt_id
-                - preview_url
-                - source_updated_at
-                - safe_error_code
-                - semantic_digest
-                - state
-                - version_id
-              properties:
-                attempt_id:
-                  type: string
-                  pattern: ^candidate_[A-Za-z0-9_-]{16,80}$
-                preview_url:
-                  oneOf:
-                    - type: string
-                      maxLength: 500
-                    - type: "null"
-                safe_error_code:
-                  oneOf:
-                    - type: string
-                      pattern: ^[A-Z][A-Z0-9_]{2,79}$
-                    - type: "null"
-                semantic_digest:
-                  oneOf:
-                    - type: string
-                      pattern: ^[a-f0-9]{64}$
-                    - type: "null"
-                state:
-                  type: string
-                  enum:
-                    - building
-                    - ready
-                    - failed
-                    - canceled
-                    - interrupted
-                version_id:
-                  oneOf:
-                    - type: string
-                      pattern: ^ver_[A-Za-z0-9_-]{16,80}$
-                    - type: "null"
-                source_updated_at:
-                  type: integer
-                  minimum: 0
-                  maximum: 8640000000000000
-            - type: "null"
-        candidate_published:
+        build_published:
           type: boolean
         numbering:
           type: string
@@ -1875,33 +1789,24 @@ components:
                 type: array
                 maxItems: 10
                 items:
-                  oneOf:
-                    - type: object
-                      additionalProperties: false
-                      required:
-                        - blockId
-                        - kind
-                        - pageId
-                      properties:
-                        blockId:
-                          type: string
-                          maxLength: 100
-                        kind:
-                          type: string
-                          enum:
-                            - edit_block
-                            - select_structure
-                        pageId:
-                          type: integer
-                          minimum: 1
-                    - type: object
-                      additionalProperties: false
-                      required:
-                        - kind
-                      properties:
-                        kind:
-                          type: string
-                          const: reprocess_verbatim
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - blockId
+                    - kind
+                    - pageId
+                  properties:
+                    blockId:
+                      type: string
+                      maxLength: 100
+                    kind:
+                      type: string
+                      enum:
+                        - edit_block
+                        - select_structure
+                    pageId:
+                      type: integer
+                      minimum: 1
         metadata:
           type: object
           additionalProperties: false
@@ -2010,7 +1915,7 @@ components:
                 - pages
                 - renderer_version
                 - semantic_digest
-                - candidate_id
+                - build_id
                 - version
               properties:
                 boundaries:
@@ -2030,12 +1935,12 @@ components:
                       pattern: ^blk_[A-Za-z0-9_-]{16,80}$
                 compiler_version:
                   type: string
-                  const: compiler-v7
+                  const: compiler-v8
                 is_stale:
                   type: boolean
                 renderer_version:
                   type: string
-                  const: semantic-html-v7-katex-0.18.1
+                  const: semantic-html-v8-katex-0.18.1
                 semantic_digest:
                   type: string
                   pattern: ^[a-f0-9]{64}$
@@ -2111,37 +2016,56 @@ components:
                   type: integer
                   minimum: 0
                   maximum: 8640000000000000
-                candidate_id:
+                build_id:
                   type: string
-                  pattern: ^candidate_[A-Za-z0-9_-]{16,80}$
+                  pattern: ^ver_[A-Za-z0-9_-]{16,80}$
                 version:
                   type: string
-                  const: draft-preview-v7
+                  const: draft-preview-v8
             - type: "null"
         updated_at:
           type: integer
           minimum: 0
           maximum: 8640000000000000
-        pending_save:
-          type: boolean
+        build:
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required:
+                - id
+                - job_id
+                - state
+                - source_updated_at
+                - safe_error_code
+              properties:
+                id:
+                  type: string
+                  pattern: ^ver_[A-Za-z0-9_-]{16,80}$
+                job_id:
+                  type: string
+                  pattern: ^job_[A-Za-z0-9_-]{16,80}$
+                state:
+                  type: string
+                  enum:
+                    - building
+                    - ready
+                    - failed
+                    - canceled
+                    - interrupted
+                source_updated_at: *a1
+                safe_error_code:
+                  type:
+                    - string
+                    - "null"
+                  maxLength: 80
     DraftUpdateAccepted:
       type: object
       additionalProperties: false
       required:
-        - job_id
-        - state
-        - expected_updated_at
+        - updated_at
       properties:
-        job_id:
-          type: string
-          pattern: ^job_[A-Za-z0-9_-]{16,80}$
-        state:
-          type: string
-          const: queued
-        expected_updated_at:
-          type: integer
-          minimum: 0
-          maximum: 8640000000000000
+        updated_at: *a1
     Job:
       type: object
       additionalProperties: false
@@ -2170,8 +2094,7 @@ components:
           enum:
             - analyze_import
             - prepare_draft
-            - save_draft
-            - build_candidate
+            - build_book
             - permanent_book_deletion
         state:
           type: string
@@ -2278,17 +2201,6 @@ components:
               type: string
               minLength: 1
               maxLength: 500
-        accepted_updated_at:
-          type:
-            - integer
-            - "null"
-          minimum: 0
-          maximum: 8640000000000000
-        retry_job_id:
-          type:
-            - string
-            - "null"
-          pattern: ^job_[A-Za-z0-9_-]{16,80}$
     SearchResponse:
       type: object
       additionalProperties: false

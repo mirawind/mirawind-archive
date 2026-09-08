@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mirawind.local/schemas/version.schema.json",
-  "title": "Mirawind immutable version marker v4",
+  "title": "Mirawind immutable version marker v5",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,11 +15,12 @@
     "compiler",
     "book_document_sha256",
     "manifest_sha256",
-    "files"
+    "files",
+    "shared_files"
   ],
   "properties": {
     "schema_version": {
-      "const": 4
+      "const": 5
     },
     "complete": {
       "const": true
@@ -66,6 +67,13 @@
     },
     "book_document_sha256": {
       "$ref": "#/$defs/sha256"
+    },
+    "shared_files": {
+      "type": "array",
+      "maxItems": 20001,
+      "items": {
+        "$ref": "#/$defs/file"
+      }
     }
   },
   "$defs": {

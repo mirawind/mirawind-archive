@@ -53,7 +53,7 @@ interface ImportReference {
 }
 
 const businessSqlPattern =
-  /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b[\s\S]*\b(?:audit_events|book_deletions|book_version_presentations|book_versions|books|book_resources|draft_candidates|imports|jobs|original_files|save_draft_requests)\b/iu;
+  /\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b[\s\S]*\b(?:audit_events|book_deletions|book_version_presentations|book_versions|books|book_resources|book_documents|book_blocks|book_nodes|document_commands|imports|jobs|original_files)\b/iu;
 
 const forbiddenCoreRuntimeSpecifiers = Object.freeze([
   "astro",

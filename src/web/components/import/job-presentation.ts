@@ -5,10 +5,9 @@ type JobState =
 
 const operationLabels: Readonly<Record<string, string>> = Object.freeze({
   analyze_import: "分析导入",
-  build_candidate: "生成阅读预览",
+  build_book: "生成阅读预览",
   permanent_book_deletion: "永久删除图书",
   prepare_draft: "整理草稿",
-  save_draft: "保存草稿",
 });
 
 const phaseLabels: Readonly<Record<string, string>> = Object.freeze({
@@ -17,7 +16,7 @@ const phaseLabels: Readonly<Record<string, string>> = Object.freeze({
   compile_book: "编译全书",
   complete: "已完成",
   failed: "处理失败",
-  finalize_candidate: "完成预览",
+  finalize_build: "完成预览",
   identify_document: "识别正文",
   interrupted: "处理已中断",
   organize_structure: "整理结构",

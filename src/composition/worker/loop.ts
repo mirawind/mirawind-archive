@@ -4,8 +4,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import { executeWorkerAttempt } from "./execute-attempt";
 import { completeWorkerAttempt } from "./complete-attempt";
 import { recoverWorkerAttempts } from "./recover-attempts";
-import { recoverDraftSaves } from "@/modules/publishing/adapters/worker/recover-draft-saves";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
@@ -33,7 +32,7 @@ function terminalState(state: string): state is TerminalJobState {
 }
 
 export async function runWorkerLoop(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly drafts: DraftRepository;
   readonly imports: ImportRepository;
@@ -47,16 +46,11 @@ export async function runWorkerLoop(input: {
   readonly shutdownSignal: AbortSignal;
   readonly workerId: string;
 }): Promise<void> {
-  let idleMaintenancePending = Boolean(input.onIdle);
+  let nextIdleMaintenanceAt = 0;
   while (!input.shutdownSignal.aborted) {
     const loopNowMs = Date.now();
-    await recoverDraftSaves({
-      database: input.database,
-      layout: input.layout,
-      nowMs: loopNowMs,
-    });
     await recoverWorkerAttempts({
-      candidates: input.candidates,
+      builds: input.builds,
       database: input.database,
       nowMs: loopNowMs,
       repository: input.repository,
@@ -70,8 +64,8 @@ export async function runWorkerLoop(input: {
       nowMs: loopNowMs,
     });
     if (!job) {
-      if (idleMaintenancePending && input.onIdle) {
-        idleMaintenancePending = false;
+      if (input.onIdle && loopNowMs >= nextIdleMaintenanceAt) {
+        nextIdleMaintenanceAt = loopNowMs + 60_000;
         await input.onIdle();
         continue;
       }
@@ -92,7 +86,7 @@ export async function runWorkerLoop(input: {
     });
     const startedAtMs = Date.now();
     const outcome = await executeWorkerAttempt({
-      candidates: input.candidates,
+      builds: input.builds,
       job,
       database: input.database,
       drafts: input.drafts,
@@ -110,7 +104,7 @@ export async function runWorkerLoop(input: {
       layout: input.layout,
     });
     const memory = await completeWorkerAttempt({
-      candidates: input.candidates,
+      builds: input.builds,
       database: input.database,
       imports: input.imports,
       job,

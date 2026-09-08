@@ -1,8 +1,8 @@
 CREATE TABLE database_baseline (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  identity TEXT NOT NULL UNIQUE CHECK (identity = 'mirawind-content-ir-v1')
+  identity TEXT NOT NULL UNIQUE CHECK (identity = 'mirawind-block-storage-v1')
 ) STRICT;
-INSERT INTO database_baseline (id, identity) VALUES (1, 'mirawind-content-ir-v1');
+INSERT INTO database_baseline (id, identity) VALUES (1, 'mirawind-block-storage-v1');
 
 CREATE TABLE installation (
   id INTEGER PRIMARY KEY CHECK (id = 1), admin_user_id TEXT UNIQUE,
@@ -17,12 +17,44 @@ CREATE TABLE books (
   access TEXT NOT NULL DEFAULT 'private' CHECK (access IN ('private', 'public')),
   title_cache TEXT NOT NULL CHECK (length(title_cache) BETWEEN 1 AND 500),
   draft_import_id TEXT REFERENCES imports(id) ON DELETE RESTRICT,
-  current_candidate_id TEXT REFERENCES draft_candidates(id),
   current_version_id TEXT REFERENCES book_versions(id),
   unavailable_reason TEXT CHECK (unavailable_reason IS NULL OR length(unavailable_reason) <= 80),
   deletion_requested_at INTEGER CHECK (deletion_requested_at IS NULL OR deletion_requested_at >= 0),
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
 ) STRICT;
+CREATE TABLE book_documents (
+  book_id INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+  schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+  updated_at INTEGER NOT NULL CHECK (updated_at BETWEEN 0 AND 8640000000000000),
+  alias TEXT,
+  metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json)),
+  publishing_json TEXT NOT NULL CHECK (json_valid(publishing_json))
+) STRICT;
+CREATE TABLE book_blocks (
+  book_id INTEGER NOT NULL REFERENCES book_documents(book_id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  type TEXT NOT NULL,
+  content_json TEXT NOT NULL CHECK (json_valid(content_json) AND json_extract(content_json,'$.id') IS id AND json_extract(content_json,'$.type') IS type),
+  PRIMARY KEY (book_id,id), UNIQUE(book_id,ordinal)
+) STRICT;
+CREATE TABLE book_nodes (
+  book_id INTEGER NOT NULL,
+  id TEXT NOT NULL,
+  root_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  PRIMARY KEY(book_id,id),
+  FOREIGN KEY(book_id,root_id) REFERENCES book_blocks(book_id,id) ON DELETE CASCADE
+) STRICT;
+CREATE TABLE document_commands (
+  book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  request_id TEXT NOT NULL,
+  request_sha256 TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(book_id,request_id)
+) STRICT;
+CREATE INDEX book_nodes_root ON book_nodes(book_id,root_id);
 CREATE TABLE imports (
   id TEXT PRIMARY KEY CHECK (id GLOB 'imp_*'),
   original_name TEXT NOT NULL CHECK (length(original_name) BETWEEN 1 AND 255),
@@ -30,25 +62,15 @@ CREATE TABLE imports (
   upload_rel_path TEXT NOT NULL,
   upload_size_bytes INTEGER NOT NULL CHECK (upload_size_bytes BETWEEN 0 AND 2147483648),
   upload_sha256 TEXT NOT NULL CHECK (length(upload_sha256) = 64),
-  selected_candidate_id TEXT, book_id INTEGER REFERENCES books(id),
+  source_path TEXT, book_id INTEGER REFERENCES books(id),
   safe_error_code TEXT CHECK (safe_error_code IS NULL OR length(safe_error_code) <= 80),
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
-  FOREIGN KEY (id, selected_candidate_id) REFERENCES import_candidates(import_id,id)
-) STRICT;
-CREATE TABLE import_candidates (
-  id TEXT PRIMARY KEY CHECK (id GLOB 'cand_*'),
-  import_id TEXT NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
-  normalized_path TEXT NOT NULL CHECK (length(normalized_path) BETWEEN 1 AND 2048),
-  confidence TEXT NOT NULL CHECK (confidence IN ('high','ambiguous')),
-  score INTEGER NOT NULL,
-  evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json) AND length(evidence_json) <= 65536),
-  diagnostics_json TEXT NOT NULL CHECK (json_valid(diagnostics_json) AND length(diagnostics_json) <= 1048576),
-  UNIQUE(import_id,normalized_path), UNIQUE(import_id,id)
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
 ) STRICT;
 CREATE TABLE book_resources (
   id TEXT PRIMARY KEY CHECK (id GLOB 'res_*'),
   book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE RESTRICT,
   storage_rel_path TEXT NOT NULL UNIQUE,
+  media_type TEXT NOT NULL,
   size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 0 AND 2147483648),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
   created_at INTEGER NOT NULL,
@@ -67,10 +89,11 @@ CREATE TABLE original_files (
 ) STRICT;
 CREATE TABLE jobs (
   id TEXT PRIMARY KEY CHECK (id GLOB 'job_*'),
-  kind TEXT NOT NULL CHECK (kind IN ('analyze_import','prepare_draft','save_draft','build_candidate','purge_book')),
+  kind TEXT NOT NULL CHECK (kind IN ('analyze_import','prepare_draft','build_book','purge_book')),
   state TEXT NOT NULL CHECK (state IN ('queued','running','succeeded','failed','canceled','interrupted')),
   import_id TEXT REFERENCES imports(id) ON DELETE RESTRICT, book_id INTEGER REFERENCES books(id) ON DELETE RESTRICT,
-  candidate_id TEXT REFERENCES draft_candidates(id), version_id TEXT,
+  version_id TEXT,
+  available_at INTEGER NOT NULL DEFAULT 0,
   captured_input_path TEXT, captured_source_updated_at INTEGER,
   captured_current_version_id TEXT REFERENCES book_versions(id),
   retry_of_job_id TEXT REFERENCES jobs(id) ON DELETE RESTRICT,
@@ -86,15 +109,6 @@ CREATE TABLE jobs (
   cancellation_requested_at INTEGER, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER,
   CHECK ((state = 'running' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL) OR state != 'running')
 ) STRICT;
-CREATE TABLE save_draft_requests (
-  job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
-  book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE RESTRICT,
-  expected_updated_at INTEGER NOT NULL CHECK (expected_updated_at BETWEEN 0 AND 8640000000000000),
-  payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND length(CAST(payload_json AS BLOB)) <= 4194304),
-  accepted_updated_at INTEGER CHECK (accepted_updated_at BETWEEN 0 AND 8640000000000000),
-  prepared_path TEXT, document_sha256 TEXT CHECK (document_sha256 IS NULL OR length(document_sha256) = 64),
-  no_change INTEGER NOT NULL DEFAULT 0 CHECK (no_change IN (0,1))
-) STRICT;
 CREATE TABLE book_versions (
   id TEXT PRIMARY KEY CHECK (id GLOB 'ver_*'),
   book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE RESTRICT,
@@ -103,7 +117,7 @@ CREATE TABLE book_versions (
   predecessor_version_id TEXT REFERENCES book_versions(id) ON DELETE RESTRICT,
   state TEXT NOT NULL CHECK (state IN ('ready','published','superseded','discarded','corrupt')),
   version_rel_path TEXT NOT NULL UNIQUE,
-  manifest_schema_version INTEGER NOT NULL CHECK (manifest_schema_version = 4),
+  manifest_schema_version INTEGER NOT NULL CHECK (manifest_schema_version = 5),
   manifest_sha256 TEXT NOT NULL CHECK (length(manifest_sha256) = 64),
   version_marker_sha256 TEXT NOT NULL CHECK (length(version_marker_sha256) = 64),
   semantic_digest TEXT NOT NULL CHECK (length(semantic_digest) = 64),
@@ -115,24 +129,6 @@ CREATE TABLE book_versions (
   complete_at INTEGER NOT NULL, published_at INTEGER, verified_at INTEGER,
   reclaimed_at INTEGER CHECK (reclaimed_at IS NULL OR reclaimed_at >= 0),
   created_by_job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE RESTRICT,
-  UNIQUE(book_id,id)
-) STRICT;
-CREATE TABLE draft_candidates (
-  id TEXT PRIMARY KEY CHECK (id GLOB 'candidate_*'),
-  book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE RESTRICT,
-  import_id TEXT NOT NULL REFERENCES imports(id) ON DELETE RESTRICT,
-  source_updated_at INTEGER NOT NULL CHECK (source_updated_at BETWEEN 0 AND 8640000000000000),
-  input_rel_path TEXT NOT NULL,
-  job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE RESTRICT,
-  version_id TEXT UNIQUE REFERENCES book_versions(id) ON DELETE RESTRICT,
-  state TEXT NOT NULL CHECK (state IN ('building','ready','failed','canceled','interrupted','discarded')),
-  semantic_digest TEXT CHECK (semantic_digest IS NULL OR length(semantic_digest) = 64),
-  safe_error_code TEXT CHECK (safe_error_code IS NULL OR (length(safe_error_code) BETWEEN 3 AND 80 AND safe_error_code NOT GLOB '*[^A-Z0-9_]*')),
-  blocking_diagnostic_count INTEGER CHECK (blocking_diagnostic_count IS NULL OR blocking_diagnostic_count BETWEEN 0 AND 10000),
-  created_at INTEGER NOT NULL CHECK (created_at >= 0), completed_at INTEGER CHECK (completed_at IS NULL OR completed_at >= created_at),
-  CHECK ((state = 'ready' AND version_id IS NOT NULL AND semantic_digest IS NOT NULL AND blocking_diagnostic_count IS NOT NULL AND safe_error_code IS NULL AND completed_at IS NOT NULL)
-    OR (state <> 'ready' AND version_id IS NULL AND semantic_digest IS NULL AND blocking_diagnostic_count IS NULL)),
-  CHECK ((state = 'building' AND safe_error_code IS NULL AND completed_at IS NULL) OR state <> 'building'),
   UNIQUE(book_id,id)
 ) STRICT;
 CREATE TABLE search_short_fields (
@@ -156,10 +152,10 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
 );
 CREATE UNIQUE INDEX one_published_version_per_book ON book_versions(book_id) WHERE state = 'published';
 CREATE UNIQUE INDEX one_ready_version_per_book ON book_versions(book_id) WHERE state = 'ready';
-CREATE INDEX draft_candidates_book_input ON draft_candidates(book_id,source_updated_at,created_at);
+CREATE INDEX builds_book_source ON book_versions(book_id,source_updated_at);
+CREATE UNIQUE INDEX one_queued_build_per_book ON jobs(book_id) WHERE kind='build_book' AND state='queued';
 CREATE INDEX book_resources_book ON book_resources(book_id,created_at);
 CREATE INDEX imports_state_expiry ON imports(state,expires_at);
-CREATE INDEX import_candidates_import_score ON import_candidates(import_id,score DESC,id);
 CREATE INDEX book_versions_book_state ON book_versions(book_id,state,complete_at);
 CREATE INDEX jobs_claim_order ON jobs(state,created_at,id);
 CREATE INDEX jobs_lease_expiry ON jobs(state,lease_until);

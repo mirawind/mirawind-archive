@@ -1,4 +1,5 @@
-import { DraftSaveFailure, waitForDraftSave } from "./wait-for-save";
+import { useAutosave, useSaveIdentity } from "./use-draft-save";
+import { DraftSaveFailure, readSaveResult } from "./save-result";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
@@ -98,6 +99,7 @@ export const StructureEditor = forwardRef<
     readonly structure: readonly StructureNode[];
   }
 >(function StructureEditor(props, ref) {
+  const saveIdentity = useSaveIdentity();
   const initialNodes = props.structure;
   const [nodes, setNodes] = useState(initialNodes);
   const [boundaries, setBoundaries] = useState(props.boundaries);
@@ -463,6 +465,13 @@ export const StructureEditor = forwardRef<
         credentials: "same-origin",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": saveIdentity({
+            book: props.bookId,
+            expected: props.updatedAt,
+            boundaries,
+            changes: dirtyChanges,
+            numbering: submittedNumbering,
+          }),
         },
         method: "PATCH",
       });
@@ -481,7 +490,7 @@ export const StructureEditor = forwardRef<
         numbering: submittedNumbering,
         updatedAt: null,
       };
-      const acceptedAt = await waitForDraftSave(response);
+      const acceptedAt = await readSaveResult(response);
       acceptedSnapshot.current = {
         boundaries,
         nodes: submittedNodes,
@@ -512,6 +521,15 @@ export const StructureEditor = forwardRef<
       setSaving(false);
     }
   }
+
+  useAutosave({
+    dirty,
+    paused: saving || conflict || Boolean(props.saveDisabled),
+    signature: JSON.stringify({ nodes, boundaries, numbering }),
+    save: () => {
+      void save();
+    },
+  });
 
   async function discardAndReload() {
     acceptedSnapshot.current = null;

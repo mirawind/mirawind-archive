@@ -36,19 +36,17 @@ export async function prepareIrBook(
     archivePath,
     stagingDirectory: resolve(layout.root, "staging", imported.id),
   });
-  const candidate = required(analysis.artifact.candidates[0]);
+  const document = required(analysis.artifact.document);
   imports.startAnalysis(imported.id, 2);
-  imports.saveCandidates({
-    candidates: analysis.artifact.candidates,
+  imports.selectDocument({
     importId: imported.id,
+    path: document.path,
     nowMs: 3,
-    nextState: "preparing",
-    selectedCandidateId: candidate.id,
   });
   const prepared = await prepareDraft({
     archivePath,
     bookId: book.id,
-    selectedCandidatePath: candidate.normalizedPath,
+    sourcePath: document.path,
     stagingDirectory: resolve(layout.root, "staging", `prepare-${imported.id}`),
     typographyProfile: profile,
   });

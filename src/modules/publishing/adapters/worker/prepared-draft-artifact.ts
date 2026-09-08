@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SafeDiagnostic } from "@/domain/errors";
 
-export const draftPreparationVersion = "prepare-draft-v6";
+export const draftPreparationVersion = "prepare-draft-v7";
 export const preparationArtifactFilename = "prepared-draft.json";
 export interface PreparedResource {
   readonly id: string;
@@ -12,6 +12,7 @@ export interface PreparedResource {
   readonly media_type: string;
 }
 export interface PreparedDraftArtifact {
+  readonly sourcePath: string;
   readonly version: typeof draftPreparationVersion;
   readonly bookId: number;
   readonly sourceUpdatedAt: number;
@@ -39,6 +40,7 @@ export async function readPreparedDraftArtifact(
   const artifact = value as PreparedDraftArtifact;
   if (
     artifact.version !== draftPreparationVersion ||
+    typeof artifact.sourcePath !== "string" ||
     !Number.isSafeInteger(artifact.bookId) ||
     artifact.bookId < 1 ||
     !Number.isSafeInteger(artifact.sourceUpdatedAt) ||

@@ -7,9 +7,9 @@
       ? readerRoot.dataset.previewUpdatedAt
       : Number.NaN,
   );
-  const previewCandidateId =
+  const previewBuildId =
     readerRoot instanceof HTMLElement
-      ? readerRoot.dataset.previewCandidateId
+      ? readerRoot.dataset.previewBuildId
       : null;
   const currentPageId = Number(
     readerRoot instanceof HTMLElement
@@ -21,8 +21,8 @@
     readerRoot.dataset.readerMode === "preview" &&
     Number.isSafeInteger(previewUpdatedAt) &&
     previewUpdatedAt >= 0 &&
-    typeof previewCandidateId === "string" &&
-    /^candidate_[A-Za-z0-9_-]{16,80}$/u.test(previewCandidateId) &&
+    typeof previewBuildId === "string" &&
+    /^ver_[A-Za-z0-9_-]{16,80}$/u.test(previewBuildId) &&
     Number.isSafeInteger(currentPageId) &&
     currentPageId > 0;
 
@@ -32,7 +32,7 @@
       {
         type,
         source_updated_at: previewUpdatedAt,
-        candidate_id: previewCandidateId,
+        build_id: previewBuildId,
         page_id: currentPageId,
         ...extra,
       },
@@ -279,9 +279,9 @@
     if (!(target instanceof HTMLAnchorElement)) return;
     const url = new URL(target.href, window.location.href);
     const match = url.pathname.match(
-      /^\/api\/manage\/books\/[1-9]\d*\/preview\/(candidate_[A-Za-z0-9_-]{16,80})\/pages\/([1-9]\d*)$/u,
+      /^\/api\/manage\/books\/[1-9]\d*\/preview\/(ver_[A-Za-z0-9_-]{16,80})\/pages\/([1-9]\d*)$/u,
     );
-    if (match && match[1] === previewCandidateId) {
+    if (match && match[1] === previewBuildId) {
       event.preventDefault();
       previewMessage("mirawind-preview-navigate", {
         fragment: url.hash ? decodeURIComponent(url.hash.slice(1)) : null,

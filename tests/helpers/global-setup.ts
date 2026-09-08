@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
@@ -12,20 +11,18 @@ import { applyMigrations } from "@/platform/sqlite/migrate";
 import { loadMigrationManifest } from "@/platform/sqlite/migration-manifest";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
-import { CandidateRegistrationAdapter } from "@/modules/publishing/adapters/sqlite/candidate-registration";
-import { CandidatePublicationRepository } from "@/modules/publishing/adapters/sqlite/candidate-publication";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
+import { BuildRegistrationRepository } from "@/modules/publishing/adapters/sqlite/build-registration";
+import { BuildPublicationRepository } from "@/modules/publishing/adapters/sqlite/build-publication";
 import { BookPresentationRepository } from "@/modules/catalog/adapters/sqlite/book-presentations";
-import { buildCandidateVersion } from "@/modules/publishing/adapters/filesystem/build-candidate-version";
+import { buildBookVersion } from "@/modules/publishing/adapters/filesystem/build-book-version";
 import {
-  finalizeCandidate,
+  finalizeBuild,
   m1PublishPolicy,
-  publishCandidate,
+  publishBuild,
 } from "@/modules/publishing/application/publishing-api";
 import { createStorageLayout } from "@/platform/filesystem/storage-layout";
-import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
-import { writeDraftViews } from "@/modules/publishing/adapters/filesystem/draft-views";
-import { serializeBookDocument } from "@/modules/publishing/core/content/book-document";
+import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
 import { captureFrozenJobInput } from "@/composition/worker/capture-frozen-input";
 import { createOpaqueId } from "@/domain/ids";
 import { buildZip } from "../../scripts/fixtures/zip-builder";
@@ -129,61 +126,53 @@ async function seedPublishedLibraryBook(input: {
     continuation,
     paragraphBlock("Searchable reader content."),
   ];
-  const json = serializeBookDocument(book);
-  await atomicWriteFile(resolve(fixture.draft, "book.json"), json, {
-    mode: 0o600,
-  });
-  await writeDraftViews(book, fixture.draft);
-  await atomicWriteFile(
-    resolve(fixture.draft, "import-artifact.json"),
-    JSON.stringify({
-      sourceUpdatedAt: book.updated_at,
-      documentSha256: createHash("sha256").update(json).digest("hex"),
-    }),
-    { mode: 0o600 },
-  );
+  input.database
+    .transaction(() => {
+      input.database
+        .prepare("DELETE FROM book_documents WHERE book_id=?")
+        .run(book.book_id);
+      new DocumentRepository(input.database).insert(book);
+    })
+    .immediate();
   input.database
     .prepare("UPDATE books SET title_cache=? WHERE id=?")
     .run(book.metadata.title, book.book_id);
-  const candidates = new DraftCandidateRepository(input.database);
+  const builds = new BuildRepository(input.database);
   const jobs = new JobRepository(input.database);
   const job = jobs.claimNext({ leaseOwner: "e2e-seed", nowMs: Date.now() });
   if (!job) throw new Error("SEED_JOB_MISSING");
   const command = await captureFrozenJobInput({
     ...input,
     job,
-    candidates,
+    builds,
     imports: new ImportRepository(input.database),
   });
-  if (command.kind !== "build_candidate") throw new Error("SEED_JOB_INVALID");
-  const artifact = await buildCandidateVersion({
+  if (command.kind !== "build_book") throw new Error("SEED_JOB_INVALID");
+  const artifact = await buildBookVersion({
     command,
     createdAtMs: Date.now(),
     layout: input.layout,
     preparationDiagnostics: [],
   });
-  await finalizeCandidate({
+  await finalizeBuild({
     artifact,
     command,
     leaseOwner: "e2e-seed",
     nowMs: Date.now(),
-    registration: new CandidateRegistrationAdapter(
+    registration: new BuildRegistrationRepository(
       input.database,
       input.layout,
       new BookPresentationRepository(input.database),
     ),
   });
-  await publishCandidate({
+  await publishBuild({
     actorUserId: null,
     bookId: book.book_id,
-    candidateId: fixture.candidate.attemptId,
+    buildId: fixture.build.id,
     expectedUpdatedAt: book.updated_at,
     nowMs: Date.now(),
     policy: m1PublishPolicy,
-    publication: new CandidatePublicationRepository(
-      input.database,
-      input.layout,
-    ),
+    publication: new BuildPublicationRepository(input.database),
   });
   setBookAccess({
     access: "public",

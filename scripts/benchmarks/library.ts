@@ -98,7 +98,7 @@ function seedBooks(database: Database.Database, count: number): void {
        id, kind, state, book_id, version_id, import_id,
        captured_source_updated_at, attempt, automatic_retry_count, phase,
        progress_json, created_at, started_at, finished_at
-     ) VALUES (?, 'build_candidate', 'succeeded', ?, ?, ?, 1000, 1, 0,
+     ) VALUES (?, 'build_book', 'succeeded', ?, ?, ?, 1000, 1, 0,
                'complete', '{}', 1, 1, 1)`,
   );
   const insertVersion = database.prepare(
@@ -109,17 +109,10 @@ function seedBooks(database: Database.Database, count: number): void {
        renderer_version, preview_version, reader_version,
        blocking_diagnostic_count, complete_at, published_at,
        verified_at, created_by_job_id
-     ) VALUES (?, ?, ?, 1000, NULL, 'published', ?, 4, ?, ?, ?,
-               'compiler-v7', 'semantic-html-v7-katex-0.18.1',
-               'draft-preview-v7', 'mirawind-reader-v4-tailwind-4.3.3',
+     ) VALUES (?, ?, ?, 1000, NULL, 'published', ?, 5, ?, ?, ?,
+               'compiler-v8', 'semantic-html-v8-katex-0.18.1',
+               'draft-preview-v8', 'mirawind-reader-v5-tailwind-4.3.3',
                0, 1, 1, 1, ?)`,
-  );
-  const insertCandidate = database.prepare(
-    `INSERT INTO draft_candidates (
-       id, book_id, import_id, source_updated_at, input_rel_path, job_id, version_id,
-       state, semantic_digest, safe_error_code,
-       blocking_diagnostic_count, created_at, completed_at
-     ) VALUES (?, ?, ?, 1000, ?, ?, ?, 'ready', ?, NULL, 0, 1, 1)`,
   );
   const insertPresentation = database.prepare(
     `INSERT INTO book_version_presentations (
@@ -131,7 +124,7 @@ function seedBooks(database: Database.Database, count: number): void {
   );
   const publish = database.prepare(
     `UPDATE books SET draft_import_id = ?,
-                      current_candidate_id = ?, current_version_id = ?
+                      current_version_id = ?
      WHERE id = ?`,
   );
   database.transaction(() => {
@@ -142,7 +135,6 @@ function seedBooks(database: Database.Database, count: number): void {
       const importId = `imp_library_benchmark_${suffix}`;
       const versionId = `ver_library_benchmark_${suffix}`;
       const jobId = `job_library_benchmark_${suffix}`;
-      const candidateId = `candidate_library_benchmark_${suffix}`;
       const sha = createHash("sha256").update(suffix).digest("hex");
       insertBook.run(id, alias, title);
       insertImport.run(importId, `tmp/${suffix}.zip`, sha, id);
@@ -151,24 +143,12 @@ function seedBooks(database: Database.Database, count: number): void {
         versionId,
         id,
         importId,
-        `books/${id}/versions/${versionId}`,
+        `books/${id}/builds/${versionId}`,
         sha,
         sha,
         sha,
         jobId,
       );
-      insertCandidate.run(
-        candidateId,
-        id,
-        importId,
-        `books/${id}/draft/candidates/${candidateId}/book.json`,
-        jobId,
-        versionId,
-        sha,
-      );
-      database
-        .prepare("UPDATE jobs SET candidate_id = ? WHERE id = ?")
-        .run(candidateId, jobId);
       insertPresentation.run(
         versionId,
         id,
@@ -187,7 +167,7 @@ function seedBooks(database: Database.Database, count: number): void {
         ]),
         sha,
       );
-      publish.run(importId, candidateId, versionId, id);
+      publish.run(importId, versionId, id);
     }
     database
       .prepare(

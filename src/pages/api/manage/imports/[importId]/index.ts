@@ -10,20 +10,6 @@ import { applyResponsePolicy } from "@/http/cache/policies";
 
 export const prerender = false;
 
-function evidence(value: Readonly<Record<string, unknown>>): readonly string[] {
-  const output: string[] = [];
-  if (typeof value.firstHeading === "string") {
-    output.push(`First heading: ${value.firstHeading.slice(0, 450)}`);
-  }
-  if (typeof value.byteSize === "number") {
-    output.push(`JSON bytes: ${value.byteSize}`);
-  }
-  if (typeof value.referencedResources === "number") {
-    output.push(`Referenced resources: ${value.referencedResources}`);
-  }
-  return output;
-}
-
 export const GET: APIRoute = ({ locals, params }) => {
   const { database } = requireRuntimeAdministrator(locals.session, {
     hideExistence: true,
@@ -45,19 +31,11 @@ export const GET: APIRoute = ({ locals, params }) => {
       if (!imported) return null;
       const currentJob = publishing.latestJobForImport(importId);
       const book = imported.bookId ? drafts.findBook(imported.bookId) : null;
-      const candidate = book ? drafts.findCurrentCandidate(book.id) : null;
+      const candidate = book ? drafts.findCurrentBuild(book.id) : null;
       const previewReady = candidate?.state === "ready";
       return {
         book_id: imported.bookId,
-        candidates: publishing.importCandidates(importId).map((candidate) => ({
-          candidate_id: candidate.id,
-          confidence: candidate.confidence,
-          diagnostics: candidate.diagnostics.map(
-            (diagnostic) => diagnostic.code,
-          ),
-          display_path: candidate.normalizedPath,
-          evidence: evidence(candidate.evidence),
-        })),
+        source_path: imported.sourcePath,
         created_at: new Date(imported.createdAtMs).toISOString(),
         current_job: currentJob ? jobs.serializeJobStatus(currentJob) : null,
         error_code: imported.safeErrorCode,
@@ -73,7 +51,6 @@ export const GET: APIRoute = ({ locals, params }) => {
               ? `/manage/books/${imported.bookId}`
               : null,
         },
-        selected_candidate_id: imported.selectedCandidateId,
         state: imported.state,
         updated_at: new Date(imported.updatedAtMs).toISOString(),
       };

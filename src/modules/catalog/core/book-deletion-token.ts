@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 export interface BookDeletionTokenInput {
   readonly alias: string | null;
   readonly bookId: number;
-  readonly currentCandidateId: string | null;
   readonly currentVersionId: string | null;
   readonly draftImportId: string | null;
   readonly title: string;
@@ -24,7 +23,6 @@ export function createBookDeletionToken(input: BookDeletionTokenInput): string {
     String(input.updatedAtMs),
     input.alias ?? "",
     input.draftImportId ?? "",
-    input.currentCandidateId ?? "",
     input.currentVersionId ?? "",
     titleDigest(input.title),
   ]) {

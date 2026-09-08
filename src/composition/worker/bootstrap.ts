@@ -7,9 +7,8 @@ import { recoverWorkerAttempts } from "./recover-attempts";
 import { WorkerHealthReporter } from "./health-reporter";
 import { runWorkerLoop } from "./loop";
 import { runWorkerMaintenance } from "./maintenance";
-import { recoverDraftSaves } from "@/modules/publishing/adapters/worker/recover-draft-saves";
 import { parseEnvironment } from "@/config/environment";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
@@ -44,10 +43,9 @@ export async function runWorkerMain(): Promise<void> {
     const bootId = randomUUID();
     const workerId = `worker:${hostname()}:${process.pid}:${bootId}`;
     const repository = new JobRepository(database);
-    const candidates = new DraftCandidateRepository(database);
-    await recoverDraftSaves({ database, layout, nowMs: Date.now() });
+    const builds = new BuildRepository(database);
     await recoverWorkerAttempts({
-      candidates,
+      builds,
       database,
       nowMs: Date.now(),
       repository,
@@ -72,7 +70,7 @@ export async function runWorkerMain(): Promise<void> {
     process.stdout.write("Mirawind worker ready\n");
     process.send?.({ type: "ready" });
     await runWorkerLoop({
-      candidates,
+      builds,
       database,
       drafts: new DraftRepository(database),
       imports: new ImportRepository(database),

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mirawind.local/schemas/document-manifest.schema.json",
-  "title": "Mirawind document manifest v4",
+  "title": "Mirawind document manifest v5",
   "description": "Immutable derived publication manifest for one book version.",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 4
+      "const": 5
     },
     "book_id": {
       "type": "integer",

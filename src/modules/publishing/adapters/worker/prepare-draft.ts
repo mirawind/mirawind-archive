@@ -7,7 +7,10 @@ import { extractZipFile } from "../filesystem/extract-archive";
 import { claimSealedExtraction } from "../filesystem/sealed-extraction";
 import { readJsonDocument } from "../filesystem/read-json-document";
 import { importMineruContent } from "../../core/preparation/mineru-content";
-import { serializeBookDocument } from "../../core/content/book-document";
+import {
+  serializeBookDocument,
+  validateBookDocument,
+} from "../../core/content/book-document";
 import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
 import { resolveContainedPath } from "@/platform/filesystem/contained-path";
 import {
@@ -15,7 +18,6 @@ import {
   type PdfEvidenceReader,
 } from "./organize-mineru-book";
 import { prepareBookResources } from "./prepare-book-resources";
-import { writeDraftViews } from "../filesystem/draft-views";
 import {
   draftPreparationVersion,
   preparationArtifactFilename,
@@ -33,7 +35,7 @@ export async function prepareDraft(input: {
   readonly archivePath: string;
   readonly bookId: number;
   readonly importId?: string;
-  readonly selectedCandidatePath: string;
+  readonly sourcePath: string;
   readonly sealedExtractionDirectory?: string;
   readonly signal?: AbortSignal;
   readonly stagingDirectory: string;
@@ -69,7 +71,7 @@ export async function prepareDraft(input: {
     input.onPhase?.("identify_document", 1, 3);
     const sourcePath = await resolveContainedPath(
       extractedRoot,
-      input.selectedCandidatePath,
+      input.sourcePath,
     );
     if (
       !/(?:^|_)content_list_v2\.json$/iu.test(
@@ -102,24 +104,15 @@ export async function prepareDraft(input: {
       preparedRoot,
       input.signal,
     );
-    const document = serializeBookDocument(organized.book);
-    await atomicWriteFile(resolve(preparedRoot, "draft/book.json"), document, {
+    const document = serializeBookDocument(
+      validateBookDocument(organized.book),
+    );
+    await atomicWriteFile(resolve(preparedRoot, "import/book.json"), document, {
       mode: 0o600,
     });
-    await writeDraftViews(organized.book, resolve(preparedRoot, "draft"));
     await atomicWriteFile(
-      resolve(
-        preparedRoot,
-        "draft/views",
-        String(organized.book.updated_at),
-        "analysis.json",
-      ),
-      JSON.stringify(organized.analysis) + "\n",
-      { mode: 0o600 },
-    );
-    await atomicWriteFile(
-      resolve(preparedRoot, "draft/import-source.json"),
-      JSON.stringify({ selected_path: input.selectedCandidatePath }) + "\n",
+      resolve(preparedRoot, "import/analysis.json"),
+      JSON.stringify(organized.analysis),
       { mode: 0o600 },
     );
     const originalId = createOpaqueId("file");
@@ -138,6 +131,7 @@ export async function prepareDraft(input: {
     }
     const artifact: PreparedDraftArtifact = {
       version: draftPreparationVersion,
+      sourcePath: input.sourcePath,
       bookId: input.bookId,
       sourceUpdatedAt: organized.book.updated_at,
       title: organized.book.metadata.title,

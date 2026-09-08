@@ -147,7 +147,7 @@ describe("IR publication", () => {
       resources: [],
       versionId: `ver_${"a".repeat(24)}`,
     });
-    expect(manifest.schema_version).toBe(4);
+    expect(manifest.schema_version).toBe(5);
     expect(manifest.source_updated_at).toBe(1000);
     expect(
       (

@@ -9,7 +9,7 @@ import {
   isChildToParentMessage,
   type JobResultMessage,
 } from "@/entrypoints/worker/protocol";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
 import { installIrDraft } from "../../helpers/ir-book";
@@ -43,7 +43,7 @@ it("renders a frozen IR candidate in production even when the process bundle was
         database,
         layout,
         job,
-        candidates: new DraftCandidateRepository(database),
+        builds: new BuildRepository(database),
         imports: new ImportRepository(database),
       });
       const child = fork(resolve(output, "worker/job-child.js"), [], {
@@ -78,16 +78,16 @@ it("renders a frozen IR candidate in production even when the process bundle was
         });
         expect(await result).toMatchObject({
           ok: true,
-          result: { kind: "candidate_build_artifact", pageCount: 1 },
+          result: { kind: "book_build_artifact", pageCount: 1 },
         });
         const version = database
           .prepare("SELECT version_id FROM jobs WHERE id=?")
-          .get(fixture.candidate.jobId) as { version_id: string };
+          .get(fixture.build.jobId) as { version_id: string };
         const html = await readFile(
           resolve(
             layout.bookDirectory,
             String(fixture.book.book_id),
-            "versions",
+            "builds",
             version.version_id,
             "published/pages/1.html",
           ),

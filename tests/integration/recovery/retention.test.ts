@@ -40,7 +40,7 @@ describe("published version and orphan retention", () => {
         (versionId, index) => {
           const job = jobs.create({
             bookId: fixture.book.id,
-            kind: "build_candidate",
+            kind: "build_book",
             nowMs: 400 + index,
           });
           jobs.fail(job.id, {
@@ -52,7 +52,7 @@ describe("published version and orphan retention", () => {
         },
       );
       const versionPath = (versionId: string) =>
-        `books/${fixture.book.id}/versions/${versionId}`;
+        `books/${fixture.book.id}/builds/${versionId}`;
       const insert = migrated.database.prepare(
         `INSERT INTO book_versions (
            id, book_id, import_id, source_updated_at, predecessor_version_id,
@@ -61,9 +61,9 @@ describe("published version and orphan retention", () => {
            renderer_version, preview_version, reader_version,
            blocking_diagnostic_count, complete_at, published_at, verified_at,
            created_by_job_id, reclaimed_at
-         ) VALUES (?, ?, ?, 1000, ?, 'superseded', ?, 4, ?, ?, ?, 'compiler-v7',
-                   'semantic-html-v7-katex-0.18.1', 'draft-preview-v7',
-                   'mirawind-reader-v4-tailwind-4.3.3', 0, ?, ?, ?, ?, NULL)`,
+         ) VALUES (?, ?, ?, 1000, ?, 'superseded', ?, 5, ?, ?, ?, 'compiler-v8',
+                   'semantic-html-v8-katex-0.18.1', 'draft-preview-v8',
+                   'mirawind-reader-v5-tailwind-4.3.3', 0, ?, ?, ?, ?, NULL)`,
       );
       insert.run(
         oldId,

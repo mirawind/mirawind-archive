@@ -9,18 +9,13 @@ import {
   recordExpiredBookDeletion,
   retryBookDeletion,
 } from "../book-deletion";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
-import { DraftSaveRepository } from "@/modules/publishing/adapters/sqlite/draft-saves";
 import {
   JobRepository,
   type JobErrorClass,
   type JobRecord,
 } from "@/modules/publishing/adapters/sqlite/jobs";
-import {
-  retryCandidateBuild,
-  terminalizeCandidateBuild,
-} from "@/modules/publishing/application/commands/maintain-candidate-build";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 import { resolveContainedPath } from "@/platform/filesystem/contained-path";
 import { withImmediateTransaction } from "@/platform/sqlite/immediate-transaction";
@@ -58,7 +53,7 @@ export async function cancelImportJob(input: {
 }
 
 export function completeJobFailure(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly errorClass: JobErrorClass;
   readonly errorCode: string;
@@ -69,7 +64,7 @@ export function completeJobFailure(input: {
 }): JobRecord {
   if (input.job.kind === "purge_book")
     return completeBookDeletionFailure(input);
-  if (input.job.kind !== "build_candidate") {
+  if (input.job.kind !== "build_book") {
     return input.repository.completeFailure({
       errorClass: input.errorClass,
       errorCode: input.errorCode,
@@ -86,19 +81,12 @@ export function completeJobFailure(input: {
       leaseOwner: input.leaseOwner,
       nowMs: input.nowMs,
     });
-    terminalizeCandidateBuild({
-      candidates: input.candidates,
-      job: completed,
-      nowMs: input.nowMs,
-      safeErrorCode: input.errorCode,
-      state: completed.state === "canceled" ? "canceled" : "failed",
-    });
     return completed;
   });
 }
 
 export function completeJobInterruption(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly errorCode: string;
   readonly job: JobRecord;
@@ -109,7 +97,7 @@ export function completeJobInterruption(input: {
   if (input.job.kind === "purge_book") {
     return completeBookDeletionInterruption(input);
   }
-  if (input.job.kind !== "build_candidate") {
+  if (input.job.kind !== "build_book") {
     return input.repository.completeInterruption({
       errorCode: input.errorCode,
       jobId: input.job.id,
@@ -124,36 +112,22 @@ export function completeJobInterruption(input: {
       leaseOwner: input.leaseOwner,
       nowMs: input.nowMs,
     });
-    terminalizeCandidateBuild({
-      candidates: input.candidates,
-      job: completed,
-      nowMs: input.nowMs,
-      safeErrorCode: input.errorCode,
-      state: "interrupted",
-    });
     return completed;
   });
 }
 
 export function recordExpiredJobLifecycle(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly job: JobRecord;
   readonly nowMs: number;
 }): void {
   recordExpiredBookDeletion(input.database, input.job, input.nowMs);
-  terminalizeCandidateBuild({
-    candidates: input.candidates,
-    job: input.job,
-    nowMs: input.nowMs,
-    safeErrorCode: "JOB_LEASE_EXPIRED",
-    state: "interrupted",
-  });
 }
 
 export function retryJobAttempt(input: {
   readonly automatic: boolean;
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly job: JobRecord;
   readonly jobs: JobRepository;
@@ -167,15 +141,10 @@ export function retryJobAttempt(input: {
       nowMs: input.nowMs,
     });
   }
-  if (input.job.kind === "build_candidate") {
-    return retryCandidateBuild({
+  if (input.job.kind === "build_book") {
+    return input.builds.retry(input.job, {
       automatic: input.automatic,
-      candidates: input.candidates,
-      job: input.job,
-      jobs: input.jobs,
       nowMs: input.nowMs,
-      runAtomically: (operation) =>
-        withImmediateTransaction(input.database, operation),
     });
   }
   return withImmediateTransaction(input.database, () => {
@@ -183,12 +152,6 @@ export function retryJobAttempt(input: {
       automatic: input.automatic,
       nowMs: input.nowMs,
     });
-    if (input.job.kind === "save_draft")
-      new DraftSaveRepository(input.database).copyForRetry(
-        input.job.id,
-        retry.id,
-        input.nowMs,
-      );
     return retry;
   });
 }

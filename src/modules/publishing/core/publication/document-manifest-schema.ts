@@ -92,7 +92,7 @@ export function validateDocumentManifest(
   if (!validateManifestSchema(manifest)) {
     throw new PublicationSchemaValidationError(
       "DOCUMENT_MANIFEST_INVALID",
-      "The document manifest does not match schema version 4.",
+      "The document manifest does not match schema version 5.",
       validateManifestSchema.errors,
     );
   }
@@ -158,12 +158,23 @@ export function validateVersionMarker(
   if (!validateMarkerSchema(marker)) {
     throw new PublicationSchemaValidationError(
       "VERSION_MARKER_INVALID",
-      "The version marker does not match schema version 4.",
+      "The version marker does not match schema version 5.",
       validateMarkerSchema.errors,
     );
   }
   const diagnostics: string[] = [];
   const files = marker.files as readonly Readonly<Record<string, unknown>>[];
+  const shared = marker.shared_files as readonly { path: string }[];
+  if (
+    new Set(shared.map((file) => file.path)).size !== shared.length ||
+    shared.some(
+      (file) =>
+        !/^assets\/[A-Za-z0-9_.-]+$|^originals\/file_[A-Za-z0-9_-]+$/.test(
+          file.path,
+        ),
+    )
+  )
+    diagnostics.push("VERSION_SHARED_RESOURCE_INVALID");
   const paths = files.map((file) => String(file.path));
   if (new Set(paths).size !== paths.length) {
     diagnostics.push("VERSION_FILE_PATH_DUPLICATE");

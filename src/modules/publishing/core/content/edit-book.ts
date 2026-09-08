@@ -202,6 +202,18 @@ export function editBookDocument(
   expectedUpdatedAt: number,
   nowMs: number,
 ): BookDocument {
+  return acceptBookChanges(
+    current,
+    applyBookEdit(current, patch),
+    expectedUpdatedAt,
+    nowMs,
+  );
+}
+
+export function applyBookEdit(
+  current: BookDocument,
+  patch: DraftEdit,
+): BookDocument {
   const next = structuredClone(current);
   if (patch.alias === null) delete next.alias;
   else if (patch.alias !== undefined) next.alias = patch.alias;
@@ -265,5 +277,5 @@ export function editBookDocument(
       }
     }
   }
-  return acceptBookChanges(current, next, expectedUpdatedAt, nowMs);
+  return next;
 }

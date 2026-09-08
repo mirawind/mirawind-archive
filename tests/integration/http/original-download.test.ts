@@ -57,7 +57,8 @@ describe("registered original HTTP download", () => {
       };
       const originalPath = resolve(
         dataRoot.layout.root,
-        version.version_rel_path,
+        "books",
+        String(bookId),
         "originals",
         fileId,
       );
@@ -90,7 +91,7 @@ describe("registered original HTTP download", () => {
           fileId,
           bookId,
           version.import_id,
-          `ignored/${fileId}`,
+          `books/${bookId}/originals/${fileId}`,
           sizeBytes,
           "a".repeat(64),
         );

@@ -1,10 +1,10 @@
 # Mirawind Schemas
 
-D-138 冻结三个独立版本化的 JSON Schema Draft 2020-12 格式：
+D-141 冻结三个独立版本化的 JSON Schema Draft 2020-12 格式：
 
-- `book.schema.json`：唯一可编辑正文 `book.json`，IR v1。
-- `document-manifest.schema.json`：派生页面、目录、块与资源映射，v4。
-- `version.schema.json`：不可变候选/发布的完整性标记，v4。
+- `book.schema.json`：逻辑正文与构建快照，IR v1；工作稿按块存 SQLite。
+- `document-manifest.schema.json`：派生页面、目录、块与资源映射，v5。
+- `version.schema.json`：不可变构建/发布的完整性标记，v5。
 
 旧 Markdown、`book.yaml`、旧 manifest 和旧数据库不被新运行时读取。切换使用全新数据
 目录重新导入，不实现旧书迁移、独立格式适配器或双写。
@@ -27,7 +27,8 @@ D-138 冻结三个独立版本化的 JSON Schema Draft 2020-12 格式：
 manifest 保存当前版本页面、标题表示、稳定块 ID、规范化可见文本及资源映射，不保存
 Markdown 源位置或文本指纹。目录树、角色和自动编号从正文块与出版设置派生。
 
-完整性标记绑定 `book_document_sha256`、`manifest_sha256`、`source_updated_at`、编译器
+完整性标记的 `files` 登记产物内文件，`shared_files` 登记书籍资源池中的图片和原始包。
+资源以书籍目录为相对定位根，不允许通过产物路径拼接到其他书籍。完整性标记绑定 `book_document_sha256`、`manifest_sha256`、`source_updated_at`、编译器
 身份与严格闭合的文件清单。文件摘要用于存储完整性，不是正文修订号。
 
 发布前既验证 schema，也验证引用闭合、页面覆盖、不可变文件完整性和当前工作稿时间。

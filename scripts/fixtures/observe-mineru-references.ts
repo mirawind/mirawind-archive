@@ -122,7 +122,7 @@ export async function observeRealMineruFixture(input: {
     : await prepareDraft({
         archivePath: input.archivePath,
         bookId: 1,
-        selectedCandidatePath: pack.content_json.relative_path,
+        sourcePath: pack.content_json.relative_path,
         stagingDirectory: input.stagingDirectory,
       });
   if (input.preparedBookRoot)
@@ -132,7 +132,7 @@ export async function observeRealMineruFixture(input: {
     });
   const book = validateBookDocument(
     JSON.parse(
-      await readFile(join(prepared.preparedRoot, "draft/book.json"), "utf8"),
+      await readFile(join(prepared.preparedRoot, "import/book.json"), "utf8"),
     ),
   );
   if (
@@ -146,12 +146,7 @@ export async function observeRealMineruFixture(input: {
     throw new Error("OBSERVED_REFERENCE_INPUT_HASH_MISMATCH");
   const analysis = JSON.parse(
     await readFile(
-      join(
-        prepared.preparedRoot,
-        "draft/views",
-        String(book.updated_at),
-        "analysis.json",
-      ),
+      join(prepared.preparedRoot, "import", "analysis.json"),
       "utf8",
     ),
   ) as {

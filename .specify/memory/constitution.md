@@ -46,6 +46,11 @@ evidence, or an owner-approved clean switch that rejects prior formats and defin
 data remediation. Runtime code MUST NOT silently reinterpret an unsupported format.
 Private reading data and credentials MUST NOT enter portable publishing configuration.
 
+D-141 stores mutable IR as ordered block records in SQLite. Metadata, publishing settings and
+the sole content timestamp MUST commit atomically with changed blocks. `book.json` is a frozen
+build snapshot, not a second editable authority. A single completed artifact identity serves
+preview and publication; immutable source resources are shared by a book's artifacts.
+
 D-138 approves a clean switch in a new data root, not automatic migration of the old root.
 D-139 explicitly authorizes retiring the old services and their dedicated Docker volume;
 other old roots remain untouched unless separately authorized. New IR runtime
@@ -182,4 +187,10 @@ retain their existing evidence requirements. No persisted body schema or data mi
 needed; existing books remain readable. Archives are no longer certified against adversarial
 input; ordinary parsing errors still fail and clean incomplete work.
 
-**Version**: 5.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-09-08
+## 5.1.0 Amendment
+
+D-141 authorizes block-level SQLite drafts, one build artifact model and shared immutable
+resources. The owner authorizes deleting this project's old runtime roots and initializing a
+clean baseline without migration or compatibility code. Source fixtures remain intact.
+
+**Version**: 5.1.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-09-08

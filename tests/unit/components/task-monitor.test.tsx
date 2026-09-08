@@ -12,7 +12,7 @@ afterEach(cleanup);
 function task(
   index: number,
   state: TaskView["state"],
-  kind = state === "running" ? "build_candidate" : "verify_version",
+  kind = state === "running" ? "build_book" : "verify_version",
 ): TaskView {
   return Object.freeze({
     attempt: 1,
@@ -45,9 +45,9 @@ describe("task monitor history", () => {
   it("keeps active and actionable work visible while bounding completed history", () => {
     const jobs = [
       task(20, "running"),
-      task(19, "failed", "build_candidate"),
+      task(19, "failed", "build_book"),
       ...Array.from({ length: 12 }, (_value, index) =>
-        task(18 - index, "succeeded", "build_candidate"),
+        task(18 - index, "succeeded", "build_book"),
       ),
     ];
     const view = render(<TaskMonitor initialJobs={jobs} />);

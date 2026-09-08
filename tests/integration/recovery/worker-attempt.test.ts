@@ -6,7 +6,7 @@ import {
 } from "@/composition/worker/attempt-lifecycle";
 import { completeWorkerAttempt } from "@/composition/worker/complete-attempt";
 import { executeWorkerAttempt } from "@/composition/worker/execute-attempt";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
@@ -16,7 +16,7 @@ describe("worker attempt terminal coordinator", () => {
   it("keeps child execution non-terminal until the completion coordinator runs", () =>
     withMigratedTestDatabase(async ({ database }, dataRoot) => {
       const jobs = new JobRepository(database);
-      const candidates = new DraftCandidateRepository(database);
+      const builds = new BuildRepository(database);
       const imports = new ImportRepository(database);
       const imported = imports.createUploaded({
         expiresAtMs: 100_000,
@@ -39,7 +39,7 @@ describe("worker attempt terminal coordinator", () => {
       });
       if (!claimed) throw new Error("EXPECTED_CLAIMED_JOB");
       const outcome = await executeWorkerAttempt({
-        candidates,
+        builds,
         childRunner: async (command) => ({
           exitCode: 0,
           memory: {
@@ -52,7 +52,7 @@ describe("worker attempt terminal coordinator", () => {
           result: {
             jobId: command.jobId,
             ok: false,
-            protocolVersion: 6,
+            protocolVersion: 7,
             safeErrorClass: "content",
             safeErrorCode: "TEST_CHILD_FAILURE",
             type: "result",
@@ -75,7 +75,7 @@ describe("worker attempt terminal coordinator", () => {
       expect(jobs.get(job.id)?.state).toBe("running");
 
       await completeWorkerAttempt({
-        candidates,
+        builds,
         database,
         imports,
         job: claimed,
@@ -96,12 +96,12 @@ describe("worker attempt terminal coordinator", () => {
     (errorClass, errorCode, state) =>
       withMigratedTestDatabase(async ({ database }) => {
         const jobs = new JobRepository(database);
-        const candidates = new DraftCandidateRepository(database);
+        const builds = new BuildRepository(database);
         const job = jobs.create({ kind: "analyze_import", nowMs: 1_000 });
         jobs.claimNext({ leaseOwner: "worker-a", nowMs: 2_000 });
         expect(
           completeJobFailure({
-            candidates,
+            builds,
             database,
             errorClass,
             errorCode,
@@ -113,7 +113,7 @@ describe("worker attempt terminal coordinator", () => {
         ).toMatchObject({ errorClass, errorCode, state });
         expect(() =>
           completeJobFailure({
-            candidates,
+            builds,
             database,
             errorClass,
             errorCode,
@@ -129,12 +129,12 @@ describe("worker attempt terminal coordinator", () => {
   it("records interruption exactly once", () =>
     withMigratedTestDatabase(async ({ database }) => {
       const jobs = new JobRepository(database);
-      const candidates = new DraftCandidateRepository(database);
+      const builds = new BuildRepository(database);
       const job = jobs.create({ kind: "analyze_import", nowMs: 1_000 });
       jobs.claimNext({ leaseOwner: "worker-a", nowMs: 2_000 });
       expect(
         completeJobInterruption({
-          candidates,
+          builds,
           database,
           errorCode: "WORKER_SHUTDOWN",
           job,
@@ -145,7 +145,7 @@ describe("worker attempt terminal coordinator", () => {
       ).toMatchObject({ errorCode: "WORKER_SHUTDOWN", state: "interrupted" });
       expect(() =>
         completeJobInterruption({
-          candidates,
+          builds,
           database,
           errorCode: "WORKER_SHUTDOWN",
           job,

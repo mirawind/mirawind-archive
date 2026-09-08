@@ -30,7 +30,6 @@ interface JobRow {
   attempt: number;
   automatic_retry_count: number;
   book_id: number | null;
-  candidate_id: string | null;
   captured_source_updated_at: number | null;
   captured_current_version_id: string | null;
   captured_input_path: string | null;
@@ -58,7 +57,6 @@ export interface JobRecord {
   readonly attempt: number;
   readonly automaticRetryCount: number;
   readonly bookId: number | null;
-  readonly candidateId: string | null;
   readonly capturedSourceUpdatedAt: number | null;
   readonly capturedCurrentVersionId: string | null;
   readonly capturedInputPath: string | null;
@@ -88,7 +86,6 @@ export type UserJobRecord = Omit<JobRecord, "kind"> & {
 
 export interface CreateJobInput {
   readonly bookId?: number;
-  readonly candidateId?: string;
   readonly capturedSourceUpdatedAt?: number;
   readonly capturedCurrentVersionId?: string;
   readonly capturedInputPath?: string;
@@ -128,7 +125,6 @@ function mapJob(row: JobRow): JobRecord {
     attempt: row.attempt,
     automaticRetryCount: row.automatic_retry_count,
     bookId: row.book_id,
-    candidateId: row.candidate_id,
     capturedSourceUpdatedAt: row.captured_source_updated_at,
     capturedCurrentVersionId: row.captured_current_version_id,
     capturedInputPath: row.captured_input_path,
@@ -219,7 +215,7 @@ export class JobRepository {
 
   create(input: CreateJobInput): UserJobRecord {
     if (
-      ["save_draft", "build_candidate", "purge_book"].includes(input.kind) &&
+      ["build_book", "purge_book"].includes(input.kind) &&
       input.bookId === undefined
     ) {
       throw new Error("JOB_BOOK_SCOPE_REQUIRED");
@@ -250,12 +246,12 @@ export class JobRepository {
         this.database
           .prepare(
             `INSERT INTO jobs (
-            id, kind, state, import_id, book_id, candidate_id, version_id,
+            id, kind, state, import_id, book_id, version_id,
             captured_input_path, captured_source_updated_at,
             captured_current_version_id, attempt, automatic_retry_count,
             phase, progress_json, created_at
           ) VALUES (
-            ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?
+            ?, ?, 'queued', ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?
           )`,
           )
           .run(
@@ -263,7 +259,6 @@ export class JobRepository {
             input.kind,
             input.importId ?? null,
             input.bookId ?? null,
-            input.candidateId ?? null,
             input.versionId ?? null,
             input.capturedInputPath ?? null,
             input.capturedSourceUpdatedAt ?? null,
@@ -333,7 +328,7 @@ export class JobRepository {
            COALESCE(SUM(CASE WHEN state = 'running' THEN 1 ELSE 0 END), 0) AS running_count,
            MIN(CASE WHEN state = 'queued' THEN created_at END) AS oldest_queued_at
          FROM jobs
-         WHERE kind IN ('analyze_import', 'prepare_draft', 'save_draft', 'build_candidate', 'purge_book')`,
+         WHERE kind IN ('analyze_import', 'prepare_draft', 'build_book', 'purge_book')`,
       )
       .get() as {
       oldest_queued_at: number | null;
@@ -371,7 +366,7 @@ export class JobRepository {
             .prepare(
               `SELECT 1 FROM jobs
                WHERE state = 'running'
-                 AND kind IN ('analyze_import', 'prepare_draft', 'save_draft', 'build_candidate', 'purge_book')
+                 AND kind IN ('analyze_import', 'prepare_draft', 'build_book', 'purge_book')
                LIMIT 1`,
             )
             .get()
@@ -382,11 +377,12 @@ export class JobRepository {
           .prepare(
             `SELECT id FROM jobs
              WHERE state = 'queued'
-               AND kind IN ('analyze_import', 'prepare_draft', 'save_draft', 'build_candidate', 'purge_book')
-             ORDER BY CASE WHEN kind = 'save_draft' THEN 0 ELSE 1 END, created_at, id
+               AND kind IN ('analyze_import', 'prepare_draft', 'build_book', 'purge_book')
+               AND available_at <= ?
+             ORDER BY created_at, rowid
              LIMIT 1`,
           )
-          .get() as { id: string } | undefined;
+          .get(input.nowMs) as { id: string } | undefined;
         if (!candidate) return null;
         const result = this.database
           .prepare(
@@ -599,7 +595,7 @@ export class JobRepository {
           .prepare(
             `SELECT id FROM jobs
              WHERE state = 'running' AND lease_until < ?
-               AND kind IN ('analyze_import', 'prepare_draft', 'save_draft', 'build_candidate', 'purge_book')
+               AND kind IN ('analyze_import', 'prepare_draft', 'build_book', 'purge_book')
              ORDER BY id`,
           )
           .all(input.nowMs) as { id: string }[];
@@ -608,7 +604,7 @@ export class JobRepository {
            error_class = 'infrastructure', error_code = 'JOB_LEASE_EXPIRED',
            finished_at = ?, lease_owner = NULL, lease_until = NULL
            WHERE id = ? AND state = 'running' AND lease_until < ?
-             AND kind IN ('analyze_import', 'prepare_draft', 'save_draft', 'build_candidate', 'purge_book')`,
+             AND kind IN ('analyze_import', 'prepare_draft', 'build_book', 'purge_book')`,
         );
         const interrupted: UserJobRecord[] = [];
         for (const row of rows) {
@@ -631,7 +627,7 @@ export class JobRepository {
       .prepare(
         `SELECT jobs.* FROM jobs
          WHERE jobs.state = 'interrupted'
-           AND jobs.kind IN ('analyze_import', 'prepare_draft', 'save_draft', 'build_candidate', 'purge_book')
+           AND jobs.kind IN ('analyze_import', 'prepare_draft', 'build_book', 'purge_book')
            AND jobs.error_class = 'infrastructure'
            AND jobs.error_code IN ('JOB_LEASE_EXPIRED', 'WORKER_SHUTDOWN')
            AND jobs.automatic_retry_count = 0
@@ -698,7 +694,6 @@ export class JobRepository {
       };
       readonly nowMs: number;
       readonly nextAttempt?: {
-        readonly candidateId: null;
         readonly capturedCurrentVersionId: string | null;
         readonly versionId: string;
       };
@@ -740,21 +735,21 @@ export class JobRepository {
         }
 
         const retryId = createOpaqueId("job");
-        if (original.kind === "build_candidate" && !input.nextAttempt) {
-          throw new Error("CANDIDATE_RETRY_REQUIRES_OWNER");
+        if (original.kind === "build_book" && !input.nextAttempt) {
+          throw new Error("BUILD_RETRY_REQUIRES_OWNER");
         }
-        if (original.kind !== "build_candidate" && input.nextAttempt) {
+        if (original.kind !== "build_book" && input.nextAttempt) {
           throw new Error("JOB_RETRY_CAPTURE_FORBIDDEN");
         }
         this.database
           .prepare(
             `INSERT INTO jobs (
-              id, kind, state, import_id, book_id, candidate_id, version_id,
+              id, kind, state, import_id, book_id, version_id,
               captured_input_path, captured_source_updated_at,
               captured_current_version_id, retry_of_job_id, attempt,
               automatic_retry_count, phase, progress_json, created_at
             ) VALUES (
-              ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?
+              ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?
             )`,
           )
           .run(
@@ -762,9 +757,6 @@ export class JobRepository {
             original.kind,
             original.importId,
             original.bookId,
-            input.nextAttempt
-              ? input.nextAttempt.candidateId
-              : original.candidateId,
             input.nextAttempt
               ? input.nextAttempt.versionId
               : original.versionId,
@@ -794,22 +786,5 @@ export class JobRepository {
         return mapUserJob(retry);
       })
       .immediate();
-  }
-
-  attachCandidate(id: string, candidateId: string): UserJobRecord {
-    const result = this.database
-      .prepare(
-        `UPDATE jobs SET candidate_id = ?
-         WHERE id = ? AND kind = 'build_candidate'
-           AND state = 'queued' AND candidate_id IS NULL`,
-      )
-      .run(candidateId, id);
-    if (result.changes !== 1) {
-      throw new Error("CANDIDATE_JOB_ATTACHMENT_INVALID");
-    }
-    const row = this.database
-      .prepare("SELECT * FROM jobs WHERE id = ?")
-      .get(id) as JobRow;
-    return mapUserJob(row);
   }
 }

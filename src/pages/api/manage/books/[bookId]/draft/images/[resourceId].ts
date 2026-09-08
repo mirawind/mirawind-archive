@@ -32,12 +32,8 @@ export const GET: APIRoute = async ({ locals, params }) => {
   }
   const publishing = createPublishingDraftServer(database);
   const book = publishing.findBook(bookId);
-  const candidate = publishing.findCurrentCandidate(bookId);
-  if (
-    !book?.draftImportId ||
-    !candidate?.versionId ||
-    candidate.state !== "ready"
-  ) {
+  const candidate = publishing.findCurrentBuild(bookId);
+  if (!book?.draftImportId || !candidate?.id || candidate.state !== "ready") {
     throw new SafeApplicationError(
       "NOT_FOUND",
       "The image was not found.",
@@ -45,10 +41,7 @@ export const GET: APIRoute = async ({ locals, params }) => {
     );
   }
   const layout = await getRuntimeStorageLayout();
-  if (
-    createPublishingArtifactServer(layout).readDraftTimestamp(bookId) !==
-    candidate.sourceUpdatedAt
-  )
+  if (publishing.readDraftTimestamp(bookId) !== candidate.sourceUpdatedAt)
     throw new SafeApplicationError(
       "NOT_FOUND",
       "The image was not found.",
@@ -59,8 +52,8 @@ export const GET: APIRoute = async ({ locals, params }) => {
   ).readPreviewResource({
     bookId,
     resourceId,
-    versionId: candidate.versionId,
-    versionRelativePath: `books/${bookId}/versions/${candidate.versionId}`,
+    versionId: candidate.id,
+    versionRelativePath: `books/${bookId}/builds/${candidate.id}`,
   });
   const headers = new Headers({
     "Content-Type": resource.mediaType,

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
 import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
 import { serializeJobStatus } from "@/modules/publishing/adapters/sqlite/job-status";
-import { terminalizeCandidateBuild } from "@/modules/publishing/application/commands/maintain-candidate-build";
 import { SafeApplicationError } from "@/domain/errors";
 import { acceptBookDeletion as acceptBookDeletionWithPorts } from "@/modules/catalog/adapters/sqlite/book-deletion";
 import { SqliteBookPublishingCleanup } from "@/modules/publishing/adapters/sqlite/book-cleanup";
@@ -25,7 +24,6 @@ function token(book: ReturnType<DraftRepository["createBook"]>): string {
   return createBookDeletionToken({
     alias: book.alias,
     bookId: book.id,
-    currentCandidateId: book.currentCandidateId,
     currentVersionId: book.currentVersionId,
     draftImportId: book.draftImportId,
     title: book.title,
@@ -224,7 +222,7 @@ describe("permanent book deletion acceptance", () => {
         .prepare(
           `INSERT INTO imports (
             id, original_name, state, upload_rel_path, upload_size_bytes, upload_sha256,
-            selected_candidate_id, book_id, safe_error_code,
+            source_path, book_id, safe_error_code,
             created_at, updated_at, expires_at
           ) VALUES (?, 'fixture.zip', 'uploaded', ?, 3, ?, NULL, ?, NULL, 1000, 1000, 9000)`,
         )
@@ -288,24 +286,15 @@ describe("permanent book deletion acceptance", () => {
         state: "running",
       });
       withImmediateTransaction(database, () => {
-        const completed = fixture.jobs.completeFailure({
+        fixture.jobs.completeFailure({
           errorClass: "canceled",
           errorCode: "JOB_CANCELED",
           jobId: fixture.candidateJob.id,
           leaseOwner: "worker:test",
           nowMs: 21,
         });
-        terminalizeCandidateBuild({
-          candidates: fixture.candidates,
-          job: completed,
-          nowMs: 21,
-          safeErrorCode: "JOB_CANCELED",
-          state: "canceled",
-        });
       });
-      expect(
-        fixture.candidates.require(fixture.candidate.attemptId),
-      ).toMatchObject({
+      expect(fixture.candidates.require(fixture.build.id)).toMatchObject({
         safeErrorCode: "JOB_CANCELED",
         state: "canceled",
       });
@@ -371,10 +360,10 @@ describe("permanent book deletion acceptance", () => {
           bookId: current.id,
           database,
           expectedUpdatedAt: fixture.document.updated_at,
-          candidateId: fixture.candidate.attemptId,
+          buildId: fixture.build.id,
           nowMs: 21,
         }),
-      ).rejects.toMatchObject({ code: "PUBLICATION_STALE" });
+      ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
       expect(
         database
           .prepare(

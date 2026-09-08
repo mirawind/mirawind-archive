@@ -121,29 +121,36 @@ The named volume is mounted at `/var/lib/mirawind`:
 ├── db/mirawind.sqlite{,-wal,-shm}
 ├── backups/
 ├── books/<book_id>/
-│   ├── draft/
-│   │   ├── book.json
-│   │   ├── views/<updated_at>/
-│   │   ├── saves/<job_id>/
-│   │   └── candidates/<candidate_id>/
+│   ├── import/{record,analysis}.json
 │   ├── originals/<file_id>
 │   ├── assets/<resource_id>.<extension>
 │   ├── quarantine/
-│   └── versions/<version_id>/
+│   └── builds/<version_id>/
+│       ├── book.json
+│       ├── document-manifest.json
+│       ├── version.json
+│       ├── preview/
+│       │   ├── pages/<page_id>.html
+│       │   ├── diagnostics.json
+│       │   └── preview-model.json
+│       └── published/pages/<page_id>.html
 ├── staging/<job_id>/
 └── tmp/
 ```
 
 Actual layout is always determined by the runtime code and opaque IDs; do not infer identity
-from titles or paths. `staging`, `versions` and uploads must stay on the same filesystem so
+from titles or paths. `staging`, `builds` and uploads must stay on the same filesystem so
 publication rename is atomic. Never expose this volume through Caddy as a static directory.
 
-Published version directories are immutable. Do not edit their `book.json`, manifest, HTML,
-resources or `version.json` in place. Save the working draft, inspect its new candidate and publish
-that version. Initialize a fresh data root for D-138; do not attach the retired Markdown database.
+SQLite stores editable content in `book_documents` (header/settings) and ordered `book_blocks`
+(root JSON), with `book_nodes` indexing nested identities. DBeaver can inspect these tables directly.
+Do not write to them outside the application: saved timestamps, validation and build scheduling
+must commit together. There is no mutable draft file, save-worker task or independent candidate.
 
-The management reprocess action reads the retained original v2 archive and submits a timestamp-guarded
-`save_draft` task. It never modifies a published version. Keep the registered original archive.
+Build directories are immutable. `book.json` is the frozen input for that artifact, not an editor
+file. Preview and publication use the same artifact identity. Images and ZIPs live once under the
+book; each marker records their shared references. Never edit those files in place. Import records
+and analysis are private evidence, not another body representation.
 
 ## 5. Lifecycle commands
 
@@ -188,10 +195,11 @@ docker compose -f docker/compose.yaml ps
 
 `migrate` acquires the schema lock and verifies that the data root belongs to the current
 release family. Follow the release's documented schema-transition policy before replacing
-the image. Feature 006 is a clean switch: initialize a new data root and administrator,
-then re-import books through the current publishing path. Keep the old complete volume as a
-read-only rollback artifact until acceptance; do not attach it to the new image or edit
-`schema_migrations`.
+the image. D-141 uses baseline `mirawind-block-storage-v1`: initialize a new data root and
+administrator, then reimport MinerU v2 ZIPs. Do not attach older databases or edit migration
+checksums. The owner authorized deleting this project's old `data/library`, `data/development`
+and `data/ir-v1` after stopping writers and disconnecting database clients; this is a one-time
+reset, not an automatic migration or ordinary upgrade policy. It provides no old-data rollback.
 
 ## 7. Monitoring
 
@@ -224,8 +232,11 @@ cookies, raw ZIP paths or private document content into incident tickets.
 
 Startup reconciliation inventories staging, database rows and immutable versions.
 Unreferenced complete version directories move to per-book quarantine; old quarantine
-entries are removed only after 24 hours. Retention always preserves the current and newest
-previous verified version. Failed path deletion remains visible for a later retry.
+entries are removed only after 24 hours. Idle maintenance repeats every 60 seconds. Replaced
+unpublished previews are reclaimed after 1 hour; old published artifacts after 24 hours. Retention
+preserves the active preview, current publication and newest verified published predecessor.
+Shared resources remain book-owned and are never deleted with an individual artifact.
+Failed path deletion remains visible for a later retry.
 
 The current schema includes the rebuildable `book_version_presentations` projection,
 irreversible `books.deletion_requested_at` barrier and content-free `book_deletions`
@@ -233,6 +244,6 @@ tombstone. Web and worker must use the same release. Startup reconciliation vali
 projection digests and current aliases; deletion cleanup remains a book-scoped worker task.
 Do not clear deletion barriers or tombstones manually.
 
-Do not manually move quarantine entries into `versions`, delete the current version, remove
+Do not manually move quarantine entries into `builds`, delete the current version, remove
 the previous verified version, or delete FTS rows. Preserve the volume and follow
 `recovery.md` if reconciliation reports a corrupt current version.

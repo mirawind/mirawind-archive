@@ -1,4 +1,4 @@
-export const readerAssetIdentity = "mirawind-reader-v4-tailwind-4.3.3" as const;
+export const readerAssetIdentity = "mirawind-reader-v5-tailwind-4.3.3" as const;
 export const readerMermaidAssetIdentity = "mirawind-mermaid-11.16.0" as const;
 export const readerStylesheetUrl =
   `/reader-assets/styles/${readerAssetIdentity}.css` as const;

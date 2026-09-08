@@ -14,7 +14,7 @@ import { openMigratedTestDatabase } from "../../helpers/database.js";
 const authSecret = "preview-test-secret-0123456789-abcdef";
 const nowMs = 10_000;
 const resourceId = "res_0123456789abcdefghij";
-const candidateId = "candidate_0123456789abcdefghij";
+const buildId = "ver_0123456789abcdefghij";
 const session = {
   authenticatedAtMs: nowMs,
   expiresAtMs: nowMs + previewAuthorizationLifetimeMs * 2,
@@ -69,7 +69,7 @@ describe("sandboxed preview resource authorization", () => {
         bookId: 7,
         nowMs,
         resourceId,
-        candidateId,
+        buildId,
         session,
       });
       const base = {
@@ -79,14 +79,14 @@ describe("sandboxed preview resource authorization", () => {
         database: migrated.database,
         nowMs: nowMs + 1,
         resourceId,
-        candidateId,
+        buildId,
       } as const;
       expect(authorizePreviewResource(base)).toBe(true);
       expect(
         authorizePreviewResource({ ...base, resourceId: `${resourceId}x` }),
       ).toBe(false);
       expect(
-        authorizePreviewResource({ ...base, candidateId: candidateId + "x" }),
+        authorizePreviewResource({ ...base, buildId: buildId + "x" }),
       ).toBe(false);
       expect(
         authorizePreviewResource({
@@ -109,7 +109,7 @@ describe("sandboxed preview resource authorization", () => {
         bookId: 7,
         nowMs,
         resourceId,
-        candidateId,
+        buildId,
         session: localSession,
       });
       const localBase = { ...base, authorization: localAuthorization };
@@ -127,14 +127,14 @@ describe("sandboxed preview resource authorization", () => {
   });
 
   it("authorizes only generated resource URLs and reuses a token per resource", () => {
-    const url = `/api/manage/books/7/preview/${candidateId}/assets/${resourceId}`;
+    const url = `/api/manage/books/7/preview/${buildId}/assets/${resourceId}`;
     const html = `<img src="${url}"><a href="${url}">image</a><img src="/other/${resourceId}">`;
     const authorized = authorizePreviewHtmlResources({
       authSecret,
       bookId: 7,
       html,
       nowMs,
-      candidateId,
+      buildId,
       session,
     });
     const tokens = [...authorized.matchAll(/[?&]authorization=([^"&]+)/gu)].map(

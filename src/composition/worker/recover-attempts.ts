@@ -4,7 +4,7 @@ import {
   recordExpiredJobLifecycle,
   retryJobAttempt,
 } from "./attempt-lifecycle";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import {
   JobRepository,
   type UserJobRecord,
@@ -13,7 +13,7 @@ import { recoverExpiredJobLeases } from "@/modules/publishing/application/recove
 import { operationalMetrics } from "@/observability/metrics";
 
 export async function recoverWorkerAttempts(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly nowMs: number;
   readonly repository: JobRepository;
@@ -23,7 +23,7 @@ export async function recoverWorkerAttempts(input: {
     nowMs: input.nowMs,
     onInterrupted: (job) =>
       recordExpiredJobLifecycle({
-        candidates: input.candidates,
+        builds: input.builds,
         database: input.database,
         job,
         nowMs: input.nowMs,
@@ -32,7 +32,7 @@ export async function recoverWorkerAttempts(input: {
     retryJob: (job, nowMs) =>
       retryJobAttempt({
         automatic: true,
-        candidates: input.candidates,
+        builds: input.builds,
         database: input.database,
         job,
         jobs: input.repository,

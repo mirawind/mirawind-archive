@@ -45,7 +45,6 @@ describe("safe locatable diagnostics", () => {
           kind: "select_structure",
           pageId: 4,
         },
-        { kind: "reprocess_verbatim" },
       ],
     });
 
@@ -59,7 +58,6 @@ describe("safe locatable diagnostics", () => {
           kind: "select_structure",
           pageId: 4,
         },
-        { kind: "reprocess_verbatim" },
       ],
     });
     expect(diagnostic.evidence?.[1]).toHaveLength(200);

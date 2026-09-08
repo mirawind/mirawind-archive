@@ -11,7 +11,6 @@ export function createPublishingImportServer(database: Database.Database) {
   return Object.freeze({
     findImport: imports.find.bind(imports),
     findJobByIdempotency: jobs.findByIdempotency.bind(jobs),
-    importCandidates: imports.candidates.bind(imports),
     latestJobForImport: jobs.latestForImport.bind(jobs),
     requireImport: imports.require.bind(imports),
     storeImport: (layout: StorageLayout) =>

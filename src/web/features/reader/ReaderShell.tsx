@@ -93,7 +93,7 @@ export function ReaderShell(props: ReaderPageModel) {
         <div
           className="reader-preview-root"
           data-preview-updated-at={props.previewUpdatedAt}
-          data-preview-candidate-id={props.previewCandidateId}
+          data-preview-build-id={props.previewBuildId}
           data-reader-mermaid-script={readerMermaidScriptUrl}
           data-reader-mode="preview"
           data-reader-page-id={props.currentPageId}

@@ -18,7 +18,6 @@ describe("workbench diagnostics", () => {
             message: "Typography changed a mixed source range.",
             phase: "typography",
             severity: "warning",
-            targets: [{ kind: "reprocess_verbatim" }],
           },
         ]}
       />,
@@ -62,7 +61,6 @@ describe("workbench diagnostics", () => {
                 kind: "edit_block",
                 pageId: 3,
               },
-              { kind: "reprocess_verbatim" },
             ],
           },
         ]}

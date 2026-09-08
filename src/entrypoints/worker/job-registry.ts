@@ -18,12 +18,10 @@ export function dispatchJobCommand<Result>(
   switch (command.kind) {
     case "analyze_import":
       return registry.analyze_import(command);
-    case "build_candidate":
-      return registry.build_candidate(command);
+    case "build_book":
+      return registry.build_book(command);
     case "prepare_draft":
       return registry.prepare_draft(command);
-    case "save_draft":
-      return registry.save_draft(command);
     case "purge_book":
       return registry.purge_book(command);
   }

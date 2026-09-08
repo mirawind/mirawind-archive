@@ -26,7 +26,7 @@ async function render(
     headingPresentations: compiled.headingByBlockId,
     blockLinkIndex: compiled.blockLinkIndex,
     blockHref: (id) => `/read/1/2#${id}`,
-    publishedResourceUrl: (id) => `/books/1/versions/ver_test/resources/${id}`,
+    publishedResourceUrl: (id) => `/books/1/builds/ver_test/resources/${id}`,
     resourceResolution: {
       diagnostics: [],
       references: resources.map((resource) => ({
@@ -115,7 +115,7 @@ describe("semantic IR rendering", () => {
     expect(rendered.html).toContain(`data-block-id="${image.id}"`);
     expect(rendered.html).toContain(`<figcaption>Figure caption</figcaption>`);
     expect(rendered.html).toContain(
-      `src="/books/1/versions/ver_test/resources/${resource}"`,
+      `src="/books/1/builds/ver_test/resources/${resource}"`,
     );
     expect(rendered.html).toContain('role="doc-noteref"');
     expect(rendered.html).toContain('role="doc-endnote"');

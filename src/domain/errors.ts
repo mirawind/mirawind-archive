@@ -26,15 +26,11 @@ export class SafeApplicationError extends Error {
   }
 }
 
-export type DiagnosticTarget =
-  | {
-      readonly blockId: string;
-      readonly kind: "edit_block" | "select_structure";
-      readonly pageId: number;
-    }
-  | {
-      readonly kind: "reprocess_verbatim";
-    };
+export interface DiagnosticTarget {
+  readonly blockId: string;
+  readonly kind: "edit_block" | "select_structure";
+  readonly pageId: number;
+}
 
 export function safeErrorCode(error: unknown): string {
   return error instanceof SafeApplicationError
@@ -89,13 +85,6 @@ export function createSafeDiagnostic(input: SafeDiagnostic): SafeDiagnostic {
   const targets: DiagnosticTarget[] = [];
   const seenTargets = new Set<string>();
   for (const target of input.targets ?? []) {
-    if (target.kind === "reprocess_verbatim") {
-      if (!seenTargets.has(target.kind)) {
-        seenTargets.add(target.kind);
-        targets.push(Object.freeze({ kind: target.kind }));
-      }
-      continue;
-    }
     if (target.kind !== "edit_block" && target.kind !== "select_structure") {
       continue;
     }

@@ -15,8 +15,8 @@ import {
   type WorkerAttemptExecutionOutcome,
 } from "./execute-attempt";
 import { BookPresentationRepository } from "@/modules/catalog/adapters/sqlite/book-presentations";
-import { CandidateRegistrationAdapter } from "@/modules/publishing/adapters/sqlite/candidate-registration";
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
+import { BuildRegistrationRepository } from "@/modules/publishing/adapters/sqlite/build-registration";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import {
   JobRepository,
@@ -27,21 +27,20 @@ import {
   readAnalyzeImportArtifact,
 } from "@/modules/publishing/adapters/worker/analyze-import";
 import { finalizePreparedDraft } from "@/modules/publishing/adapters/worker/finalize-prepared-draft";
-import { finalizeDraftSave } from "@/modules/publishing/adapters/worker/finalize-draft-save";
 import {
   preparedDraftArtifactPath,
   readPreparedDraftArtifact,
 } from "@/modules/publishing/adapters/worker/prepared-draft-artifact";
 import {
   evaluateJobRetry,
-  finalizeCandidate,
+  finalizeBuild,
 } from "@/modules/publishing/application/publishing-api";
 import type { ProcessTreeMemoryObservation } from "@/observability/attempt-observation";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 import { resolveContainedPath } from "@/platform/filesystem/contained-path";
 
 export async function completeWorkerAttempt(input: {
-  readonly candidates: DraftCandidateRepository;
+  readonly builds: BuildRepository;
   readonly database: Database.Database;
   readonly imports: ImportRepository;
   readonly job: JobRecord;
@@ -76,12 +75,12 @@ export async function completeWorkerAttempt(input: {
         nowMs: Date.now(),
       });
       completeJobFailure({
-        candidates: input.candidates,
+        builds: input.builds,
         database: input.database,
         errorClass: "canceled",
         errorCode:
-          latest.errorCode === "CANDIDATE_SUPERSEDED"
-            ? "CANDIDATE_SUPERSEDED"
+          latest.errorCode === "BUILD_SUPERSEDED"
+            ? "BUILD_SUPERSEDED"
             : "JOB_CANCELED",
         job: input.job,
         leaseOwner: input.leaseOwner,
@@ -92,7 +91,7 @@ export async function completeWorkerAttempt(input: {
     }
     if (input.outcome.kind === "execution_failed") {
       completeJobFailure({
-        candidates: input.candidates,
+        builds: input.builds,
         database: input.database,
         errorClass: "infrastructure",
         errorCode: input.outcome.errorCode,
@@ -106,7 +105,7 @@ export async function completeWorkerAttempt(input: {
     const { command, execution } = input.outcome;
     if (input.outcome.shutdownRequested) {
       const interrupted = completeJobInterruption({
-        candidates: input.candidates,
+        builds: input.builds,
         database: input.database,
         errorCode: "WORKER_SHUTDOWN",
         job: input.job,
@@ -117,7 +116,7 @@ export async function completeWorkerAttempt(input: {
       if (evaluateJobRetry(interrupted, "automatic").allowed) {
         retryJobAttempt({
           automatic: true,
-          candidates: input.candidates,
+          builds: input.builds,
           database: input.database,
           job: interrupted,
           jobs: input.repository,
@@ -196,37 +195,24 @@ export async function completeWorkerAttempt(input: {
         });
         await rm(stagingDirectory, { force: true, recursive: true });
       }
-      if (input.job.kind === "save_draft") {
-        if (!execution.result.result)
-          throw new Error("DRAFT_SAVE_RESULT_MISSING");
-        await finalizeDraftSave({
-          database: input.database,
-          layout: input.layout,
-          jobId: input.job.id,
-          leaseOwner: input.leaseOwner,
-          nowMs: Date.now(),
-          result: execution.result.result,
-        });
-        await rm(resolve(input.layout.root, "staging", input.job.id), {
-          force: true,
-          recursive: true,
-        });
-        return memory;
-      }
-      if (input.job.kind === "build_candidate") {
-        if (command.kind !== "build_candidate") {
-          throw new Error("BUILD_CANDIDATE_INPUT_INVALID");
+      if (input.job.kind === "build_book") {
+        if (command.kind !== "build_book") {
+          throw new Error("BUILD_INPUT_INVALID");
         }
-        await finalizeCandidate({
+        await finalizeBuild({
           artifact: execution.result.result,
           command,
           leaseOwner: input.leaseOwner,
           nowMs: Date.now(),
-          registration: new CandidateRegistrationAdapter(
+          registration: new BuildRegistrationRepository(
             input.database,
             input.layout,
             new BookPresentationRepository(input.database),
           ),
+        });
+        await rm(resolve(input.layout.root, "staging", input.job.id), {
+          force: true,
+          recursive: true,
         });
         return memory;
       }
@@ -272,7 +258,7 @@ export async function completeWorkerAttempt(input: {
       }
     }
     completeJobFailure({
-      candidates: input.candidates,
+      builds: input.builds,
       database: input.database,
       errorClass,
       errorCode,
@@ -289,7 +275,7 @@ export async function completeWorkerAttempt(input: {
           ? error.message
           : "WORKER_JOB_FINALIZATION_FAILED";
       completeJobFailure({
-        candidates: input.candidates,
+        builds: input.builds,
         database: input.database,
         errorClass: "infrastructure",
         errorCode,

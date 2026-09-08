@@ -1,4 +1,5 @@
-import { waitForDraftSave } from "./wait-for-save";
+import { readSaveResult } from "./save-result";
+import { useSaveIdentity } from "./use-draft-save";
 import { Check, ImageUp, Settings, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -40,6 +41,7 @@ export function BookSettingsDialog(props: {
   readonly draft: DraftView;
   readonly onChanged: () => Promise<void>;
 }) {
+  const saveIdentity = useSaveIdentity();
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -132,6 +134,11 @@ export function BookSettingsDialog(props: {
           credentials: "same-origin",
           headers: {
             "Content-Type": "application/json",
+            "Idempotency-Key": saveIdentity({
+              book: props.draft.book_id,
+              expected: expectedUpdatedAt,
+              fields: submittedFields,
+            }),
           },
           method: "PATCH",
         },
@@ -144,7 +151,7 @@ export function BookSettingsDialog(props: {
         );
         return;
       }
-      setExpectedUpdatedAt(await waitForDraftSave(response));
+      setExpectedUpdatedAt(await readSaveResult(response));
       if (JSON.stringify(fieldsRef.current) === submittedFields)
         dialog.current?.close();
       await props.onChanged();
@@ -189,7 +196,7 @@ export function BookSettingsDialog(props: {
         !/^res_[A-Za-z0-9_-]{16,80}$/u.test(uploadedResourceId)
       )
         throw new Error("COVER_RESPONSE_INVALID");
-      setExpectedUpdatedAt(await waitForDraftSave(response));
+      setExpectedUpdatedAt(await readSaveResult(response));
       setCoverId((current) =>
         current === previousCoverId ? uploadedResourceId : current,
       );

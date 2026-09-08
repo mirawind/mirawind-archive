@@ -164,7 +164,7 @@ it("owns local Web and worker through upload, restart and process failures", asy
     );
     const draft = (await draftResponse.json()) as {
       updated_at: number;
-      candidate: { attempt_id: string };
+      build: { id: string };
     };
     const published = await fetch(
       `${origin}/api/manage/books/${book.book_id}/publish`,
@@ -176,7 +176,7 @@ it("owns local Web and worker through upload, restart and process failures", asy
         },
         body: JSON.stringify({
           expected_updated_at: draft.updated_at,
-          candidate_id: draft.candidate.attempt_id,
+          build_id: draft.build.id,
         }),
       },
     );

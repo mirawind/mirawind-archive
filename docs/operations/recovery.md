@@ -1,9 +1,9 @@
 # Recovery and incident runbook
 
 Recovery never mutates the source deployment first. Stop writers, preserve evidence, make a
-copy or snapshot, and perform destructive tests only on that copy. A database backup alone
-does not contain `book.json`, resources, originals or immutable versions; normal disaster recovery
-requires the complete persistent volume.
+copy or snapshot, and perform destructive tests only on that copy. A database backup contains
+the editable blocks and settings, but not shared resources, originals or immutable build artifacts;
+normal disaster recovery requires the complete persistent volume.
 
 ## 1. Backup policy
 
@@ -58,7 +58,7 @@ Restore into a new disposable volume or host, never over the only live copy:
 8. retain the old live volume until acceptance is complete.
 
 The historical M1 drill in `docs/audits/m1-migration-recovery-report.md` concerns the retired
-Markdown database. D-138 rejects that baseline: initialize a new IR data root and reimport
+Markdown database. D-141 rejects that and the file-draft baseline: initialize a new data root and reimport
 the original MinerU v2 ZIPs. Do not run old-format migration or audit scripts on the new root.
 
 ## 3. Lost administrator credentials
@@ -132,7 +132,7 @@ When automatic rollback occurs:
 2. save bounded logs and the `book.version.recovered` audit event;
 3. determine whether the cause is disk failure, manual mutation or incomplete restore;
 4. restore the complete volume to a disposable location and compare;
-5. rebuild from authoritative `book.json`, resources and original only after the
+5. rebuild from authoritative SQLite blocks and shared resources only after the
    storage cause is understood.
 
 Never edit the current pointer, version state, `version.json` or manifest manually.
@@ -155,7 +155,7 @@ For a failed cleanup:
 
 Cleanup removes the deterministic book directory, associated retained upload directories and
 associated inactive staging directories before its final database purge. Missing targets are
-normal retry progress. Do not delete `books`, `imports`, `save_draft_requests`,
+normal retry progress. Do not delete `books`, `imports`, `book_documents`,
 `book_deletions` or job rows by hand: the database inventory is required until filesystem
 absence has been proven.
 

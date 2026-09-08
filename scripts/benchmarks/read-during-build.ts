@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import Database from "better-sqlite3";
 
-import { DraftCandidateRepository } from "@/modules/publishing/adapters/sqlite/draft-candidate-repository";
-import { readDraftHeader } from "@/modules/publishing/adapters/filesystem/draft-document";
+import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
+import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
 import {
   argumentMap,
   boundedInteger,
@@ -114,7 +114,7 @@ function runningCandidate(database: Database.Database): boolean {
     database
       .prepare(
         `SELECT 1 FROM jobs
-         WHERE kind = 'build_candidate' AND state = 'running'
+         WHERE kind = 'build_book' AND state = 'running'
          LIMIT 1`,
       )
       .get(),
@@ -129,7 +129,7 @@ async function waitForRunningCandidate(
     if (runningCandidate(database)) return;
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
   }
-  throw new Error("READ_DURING_BUILD_CANDIDATE_NOT_RUNNING");
+  throw new Error("READ_DURING_BUILD_NOT_RUNNING");
 }
 
 function scheduleCandidate(database: Database.Database, bookId: number): void {
@@ -147,17 +147,9 @@ function scheduleCandidate(database: Database.Database, bookId: number): void {
   if (!draft?.draft_import_id) {
     throw new Error("READ_DURING_BUILD_DRAFT_MISSING");
   }
-  new DraftCandidateRepository(database).createForDocument({
+  new BuildRepository(database).createForDocument({
     bookId,
-    sourceUpdatedAt: readDraftHeader(
-      resolve(
-        dirname(database.name),
-        "../books",
-        String(bookId),
-        "draft/book.json",
-      ),
-      bookId,
-    ).updated_at,
+    sourceUpdatedAt: new DocumentRepository(database).timestamp(bookId),
     nowMs: Date.now(),
     importId: draft.draft_import_id,
   });

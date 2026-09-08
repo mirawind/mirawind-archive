@@ -31,10 +31,10 @@ describe("pinned renderer asset closure", () => {
   it("generates one local WOFF2-only KaTeX closure with license and integrity", async () => {
     const root = await mkdtemp(join(tmpdir(), "renderer-assets-"));
     generatedRoots.push(root);
-    const output = resolve(root, "semantic-html-v7-katex-0.18.1");
+    const output = resolve(root, "semantic-html-v8-katex-0.18.1");
     const repeatedOutput = resolve(
       root,
-      "semantic-html-v7-katex-0.18.1-repeated",
+      "semantic-html-v8-katex-0.18.1-repeated",
     );
     await execFileAsync(process.execPath, [
       "scripts/prepare-renderer-assets.mjs",
@@ -61,12 +61,12 @@ describe("pinned renderer asset closure", () => {
     const css = await readFile(resolve(output, "katex.css"), "utf8");
 
     expect(rendererAssetBaseUrl).toBe(
-      "/reader-assets/renderers/semantic-html-v7-katex-0.18.1",
+      "/reader-assets/renderers/semantic-html-v8-katex-0.18.1",
     );
     expect(rendererStylesheetUrl).toBe(`${rendererAssetBaseUrl}/katex.css`);
     expect(manifest).toMatchObject({
       katex_version: "0.18.1",
-      renderer_version: "semantic-html-v7-katex-0.18.1",
+      renderer_version: "semantic-html-v8-katex-0.18.1",
     });
     expect(
       manifest.files.filter((file) => file.path.endsWith(".woff2")),

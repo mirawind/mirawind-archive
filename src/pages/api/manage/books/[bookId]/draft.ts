@@ -9,7 +9,6 @@ import { requireRuntimeAdministrator } from "@/http/authorization/runtime-admin"
 import { applyResponsePolicy } from "@/http/cache/policies";
 import { requireMutationOrigin } from "@/http/origin";
 import { readBoundedJson } from "@/http/json-body";
-import { getCurrentDraftCandidate } from "@/modules/publishing/application/publishing-api";
 import {
   getRuntimeEnvironment,
   getRuntimeStorageLayout,
@@ -42,25 +41,17 @@ export const GET: APIRoute = async ({ locals, params }) => {
   const artifacts = createPublishingArtifactServer(
     await getRuntimeStorageLayout(),
   );
-  const view = await artifacts.readDraftView(bookId);
-  const record = publishing.findCurrentCandidate(bookId);
-  const candidate =
-    record?.sourceUpdatedAt === view.updated_at
-      ? getCurrentDraftCandidate({
-          bookId,
-          candidate: record,
-          sourceUpdatedAt: view.updated_at,
-        })
-      : null;
+  const view = publishing.readDraftView(bookId);
+  const record = publishing.findCurrentBuild(bookId);
+  const build = record?.sourceUpdatedAt === view.updated_at ? record : null;
   let preview: Record<string, unknown> | null = null;
   let diagnostics: readonly SafeDiagnostic[] = [];
-  if (candidate?.state === "ready" && candidate.version_id) {
-    const path =
-      "books/" + bookId + "/versions/" + candidate.version_id + "/preview";
+  if (build?.state === "ready" && build.id) {
+    const path = "books/" + bookId + "/builds/" + build.id + "/preview";
     preview = await artifacts.readPreviewModel(path);
     if (
       preview.source_updated_at !== view.updated_at ||
-      preview.candidate_id !== candidate.attempt_id
+      preview.build_id !== build.id
     )
       throw new SafeApplicationError(
         "PREVIEW_IDENTITY_INVALID",
@@ -75,9 +66,17 @@ export const GET: APIRoute = async ({ locals, params }) => {
     {
       access: book.access,
       book_id: book.id,
-      candidate,
-      candidate_published: Boolean(
-        candidate?.version_id && candidate.version_id === book.currentVersionId,
+      build: build
+        ? {
+            id: build.id,
+            job_id: build.jobId,
+            state: build.state,
+            source_updated_at: build.sourceUpdatedAt,
+            safe_error_code: build.safeErrorCode,
+          }
+        : null,
+      build_published: Boolean(
+        build?.state === "ready" && build.id === book.currentVersionId,
       ),
       alias: view.alias,
       boundaries: view.publishing.boundaries,
@@ -86,7 +85,6 @@ export const GET: APIRoute = async ({ locals, params }) => {
       metadata: view.metadata,
       numbering: view.publishing.numbering,
       published: book.currentVersionId !== null,
-      pending_save: publishing.hasPendingSave(bookId),
       preview: preview ? { ...preview, is_stale: false } : null,
       structure: view.structure,
       title: view.metadata.title,
@@ -112,15 +110,15 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
       "A draft timestamp is required.",
       400,
     );
-  const result = publishingDraftActions.queueDraftSave({
+  const result = publishingDraftActions.saveDocument({
     bookId,
     database,
-    layout: await getRuntimeStorageLayout(),
+    requestId: request.headers.get("Idempotency-Key") ?? "",
     expectedUpdatedAt: expected_updated_at,
     patch,
     nowMs: Date.now(),
   });
   const headers = new Headers();
   applyResponsePolicy(headers, "private-api");
-  return Response.json(result, { headers, status: 202 });
+  return Response.json(result, { headers, status: 200 });
 };

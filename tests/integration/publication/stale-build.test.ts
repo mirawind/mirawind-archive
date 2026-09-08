@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
-import { serializeBookDocument } from "@/modules/publishing/core/content/book-document";
-import { queueDraftSave } from "@/modules/publishing/adapters/filesystem/queue-draft-save";
+import { saveDocument } from "@/modules/publishing/adapters/sqlite/save-document";
 import { VersionRepository } from "@/modules/publishing/adapters/sqlite/versions";
 import {
-  CandidatePublicationRepository,
-  type CandidatePromotionCrashPoint,
-} from "@/modules/publishing/adapters/sqlite/candidate-publication";
+  BuildPublicationRepository,
+  type BuildPromotionCrashPoint,
+} from "@/modules/publishing/adapters/sqlite/build-publication";
 import {
   m1PublishPolicy,
-  publishCandidate,
+  publishBuild,
 } from "@/modules/publishing/application/publishing-api";
 
 import { withMigratedTestDatabase } from "../../helpers/database.js";
@@ -102,16 +100,13 @@ describe("guarded candidate publication compare-and-swap", () => {
         importId: fixture.imported.id,
       });
 
-      expect(next).toMatchObject({ state: "building", versionId: null });
-      expect(
-        fixture.candidates.require(fixture.candidate.attemptId),
-      ).toMatchObject({
+      expect(next).toMatchObject({ state: "building" });
+      expect(fixture.candidates.require(fixture.build.id)).toMatchObject({
         blockingDiagnosticCount: 0,
         state: "ready",
-        versionId: publicationTestVersionId,
+        id: publicationTestVersionId,
       });
       expect(fixture.drafts.requireBook(fixture.book.id)).toMatchObject({
-        currentCandidateId: next.attemptId,
         currentVersionId: publicationTestVersionId,
         access: "public",
       });
@@ -123,14 +118,14 @@ describe("guarded candidate publication compare-and-swap", () => {
   it("keeps the public pointer empty when the draft becomes stale", () =>
     withMigratedTestDatabase(async ({ database }) => {
       const fixture = setupPublicationFixture(database);
-      await atomicWriteFile(
-        fixture.draftPath,
-        serializeBookDocument({
-          ...fixture.document,
-          updated_at: publicationTestUpdatedAt + 1,
-        }),
-        { mode: 0o600 },
-      );
+      saveDocument({
+        database,
+        bookId: fixture.book.id,
+        expectedUpdatedAt: publicationTestUpdatedAt,
+        patch: { metadata: { title: "New title" } },
+        requestId: "stale_test_save_0001",
+        nowMs: 13,
+      });
 
       await expect(
         publishReadyCandidateForTest({
@@ -157,17 +152,16 @@ describe("guarded candidate publication compare-and-swap", () => {
       await withMigratedTestDatabase(async ({ database }) => {
         const fixture = setupPublicationFixture(database);
         await expect(
-          publishCandidate({
+          publishBuild({
             actorUserId: null,
             bookId: fixture.book.id,
             expectedUpdatedAt: publicationTestUpdatedAt,
-            candidateId: fixture.candidate.attemptId,
+            buildId: fixture.build.id,
             nowMs: 12,
             policy: m1PublishPolicy,
-            publication: new CandidatePublicationRepository(
+            publication: new BuildPublicationRepository(
               database,
-              fixture.layout,
-              (crashPoint: CandidatePromotionCrashPoint) => {
+              (crashPoint: BuildPromotionCrashPoint) => {
                 if (crashPoint === point) throw new Error(`CRASH_${point}`);
               },
             ),
@@ -196,20 +190,16 @@ describe("guarded candidate publication compare-and-swap", () => {
     withMigratedTestDatabase(async ({ database }) => {
       const fixture = setupPublicationFixture(database);
       await expect(
-        publishCandidate({
+        publishBuild({
           actorUserId: null,
           bookId: fixture.book.id,
           expectedUpdatedAt: publicationTestUpdatedAt,
-          candidateId: fixture.candidate.attemptId,
+          buildId: fixture.build.id,
           nowMs: 12,
           policy: m1PublishPolicy,
-          publication: new CandidatePublicationRepository(
-            database,
-            fixture.layout,
-            (point) => {
-              if (point === "after_commit") throw new Error("RESPONSE_LOST");
-            },
-          ),
+          publication: new BuildPublicationRepository(database, (point) => {
+            if (point === "after_commit") throw new Error("RESPONSE_LOST");
+          }),
         }),
       ).rejects.toThrow("RESPONSE_LOST");
 
@@ -235,21 +225,18 @@ describe("guarded candidate publication compare-and-swap", () => {
     withMigratedTestDatabase(async ({ database }) => {
       const fixture = setupPublicationFixture(database);
       await expect(
-        publishCandidate({
+        publishBuild({
           actorUserId: null,
           bookId: fixture.book.id,
           expectedUpdatedAt: publicationTestUpdatedAt,
-          candidateId: fixture.candidate.attemptId,
+          buildId: fixture.build.id,
           nowMs: 12,
-          publication: new CandidatePublicationRepository(
-            database,
-            fixture.layout,
-          ),
+          publication: new BuildPublicationRepository(database),
           policy: {
             evaluate() {
-              queueDraftSave({
+              saveDocument({
+                requestId: "publish_race_save_001",
                 database,
-                layout: fixture.layout,
                 bookId: fixture.book.id,
                 expectedUpdatedAt: publicationTestUpdatedAt,
                 patch: { metadata: { title: "Changed" } },
@@ -259,7 +246,7 @@ describe("guarded candidate publication compare-and-swap", () => {
             },
           },
         }),
-      ).rejects.toMatchObject({ code: "PUBLICATION_STALE" });
+      ).rejects.toMatchObject({ code: "DRAFT_PRECONDITION_FAILED" });
       expect(
         fixture.drafts.requireBook(fixture.book.id).currentVersionId,
       ).toBeNull();
@@ -275,16 +262,13 @@ describe("guarded candidate publication compare-and-swap", () => {
         nowMs: 12,
       });
       await expect(
-        publishCandidate({
+        publishBuild({
           actorUserId: null,
           bookId: fixture.book.id,
           expectedUpdatedAt: publicationTestUpdatedAt,
-          candidateId: fixture.candidate.attemptId,
+          buildId: fixture.build.id,
           nowMs: 13,
-          publication: new CandidatePublicationRepository(
-            database,
-            fixture.layout,
-          ),
+          publication: new BuildPublicationRepository(database),
           policy: m1PublishPolicy,
         }),
       ).rejects.toMatchObject({ code: "PUBLICATION_STALE" });

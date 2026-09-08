@@ -21,13 +21,93 @@ export const contentLimits = Object.freeze({
   blockBytes: 4 * 1024 * 1024,
 });
 export const maximumContentTimestamp = 8_640_000_000_000_000;
-const validateSchema = new Ajv2020({
+const validator = new Ajv2020({
   strict: true,
   allErrors: false,
   coerceTypes: false,
   removeAdditional: false,
   useDefaults: false,
-}).compile<BookDocument>(schema);
+});
+const validateSchema = validator.compile<BookDocument>(schema);
+const validateBlockSchema = validator.compile<ContentBlock>({
+  $ref: schema.$id + "#/$defs/block",
+});
+
+// Heading edits need the ordered book context; ordinary roots can be checked in isolation.
+export function validateEditedRoot(
+  input: unknown,
+  resourceIds: ReadonlySet<string>,
+  externalKind: (id: string) => string | null,
+): ContentBlock {
+  inspectJson(input);
+  if (!validateBlockSchema(input)) invalid();
+  const entries = [...contentEntries([input])];
+  if (entries.length > contentLimits.blocks)
+    invalid("BOOK_DOCUMENT_LIMIT_EXCEEDED");
+  const kinds = new Map<string, string>();
+  for (const { node, kind, depth } of entries) {
+    if (
+      kinds.has(node.id) ||
+      externalKind(node.id) !== null ||
+      depth > contentLimits.blockDepth
+    )
+      invalid("BOOK_BLOCK_IDENTITY_INVALID");
+    if (kind === "heading")
+      invalid("BOOK_HEADING_REQUIRES_STRUCTURE_VALIDATION");
+    kinds.set(node.id, kind);
+    if ("type" in node && node.type === "table") validateTable(node);
+    if (
+      "type" in node &&
+      node.type === "list" &&
+      !node.ordered &&
+      node.start !== undefined
+    )
+      invalid("BOOK_LIST_START_INVALID");
+  }
+  const kindOf = (id: string) => kinds.get(id) ?? externalKind(id);
+  const inlines = (nodes: readonly InlineNode[]): void => {
+    for (const node of nodes) {
+      if (node.type === "image" && !resourceIds.has(node.resource_id))
+        invalid("BOOK_RESOURCE_MISSING");
+      if (
+        node.type === "footnote_reference" &&
+        kindOf(node.target_id) !== "footnote"
+      )
+        invalid("BOOK_FOOTNOTE_MISSING");
+      if (node.type === "link") {
+        if (
+          node.target.type === "block" &&
+          kindOf(node.target.block_id) === null
+        )
+          invalid("BOOK_LINK_MISSING");
+        if (
+          node.target.type === "resource" &&
+          !resourceIds.has(node.target.resource_id)
+        )
+          invalid("BOOK_RESOURCE_MISSING");
+        if (node.target.type === "external") {
+          let url: URL;
+          try {
+            url = new URL(node.target.url);
+          } catch {
+            invalid("BOOK_LINK_INVALID");
+          }
+          if (!["https:", "http:", "mailto:"].includes(url.protocol))
+            invalid("BOOK_LINK_INVALID");
+        }
+      }
+      if ("content" in node) inlines(node.content);
+    }
+  };
+  for (const { node } of entries) {
+    if (!("type" in node)) continue;
+    if (node.type === "paragraph") inlines(node.content);
+    if (node.type === "image" && !resourceIds.has(node.resource_id))
+      invalid("BOOK_RESOURCE_MISSING");
+    if ("caption" in node) inlines(node.caption ?? []);
+  }
+  return input;
+}
 
 function invalid(code = "BOOK_DOCUMENT_INVALID"): never {
   throw new SafeApplicationError(code, "The book document is invalid.", 400);

@@ -3,14 +3,14 @@ import {
   isKnownJobPhase,
   isJobProgress,
   userJobKinds,
-  parseBuildCandidateCommand,
-  type BuildCandidateCommand,
+  parseBuildBookCommand,
+  type BuildBookCommand,
   type JobPhase,
   type JobProgress,
   type JobProgressUnit,
 } from "@/modules/publishing/application/publishing-api";
 
-export const jobChildProtocolVersion = 6;
+export const jobChildProtocolVersion = 7;
 
 interface FrozenJobCommandBase {
   readonly attempt: number;
@@ -30,13 +30,7 @@ export interface PrepareDraftCommand extends FrozenJobCommandBase {
   readonly importId: string;
   readonly importUploadRelativePath: string;
   readonly kind: "prepare_draft";
-  readonly selectedCandidateRelativePath: string;
-}
-export interface SaveDraftCommand extends FrozenJobCommandBase {
-  readonly bookId: number;
-  readonly expectedUpdatedAt: number;
-  readonly requestRelativePath: string;
-  readonly kind: "save_draft";
+  readonly sourceRelativePath: string;
 }
 
 export interface PurgeBookCommand extends FrozenJobCommandBase {
@@ -46,9 +40,8 @@ export interface PurgeBookCommand extends FrozenJobCommandBase {
 
 export type FrozenJobInput =
   | AnalyzeImportCommand
-  | BuildCandidateCommand
+  | BuildBookCommand
   | PrepareDraftCommand
-  | SaveDraftCommand
   | PurgeBookCommand;
 
 export interface RunJobMessage {
@@ -140,9 +133,9 @@ export function isRunJobMessage(value: unknown): value is RunJobMessage {
   if (value.protocolVersion !== jobChildProtocolVersion) return false;
   const input = value.input;
   if (!isRecord(input)) return false;
-  if (input.kind === "build_candidate") {
+  if (input.kind === "build_book") {
     try {
-      parseBuildCandidateCommand(input);
+      parseBuildBookCommand(input);
       return true;
     } catch {
       return false;
@@ -189,7 +182,7 @@ export function isRunJobMessage(value: unknown): value is RunJobMessage {
         "bookId",
         "importId",
         "importUploadRelativePath",
-        "selectedCandidateRelativePath",
+        "sourceRelativePath",
       ]) &&
       isNullablePositiveInteger(input.bookId) &&
       input.bookId !== null &&
@@ -197,34 +190,17 @@ export function isRunJobMessage(value: unknown): value is RunJobMessage {
       isOpaqueId("import", input.importId) &&
       input.importUploadRelativePath ===
         "tmp/uploads/" + input.importId + "/original.zip" &&
-      typeof input.selectedCandidateRelativePath === "string" &&
-      input.selectedCandidateRelativePath.length > 0 &&
-      input.selectedCandidateRelativePath.length <= 2048 &&
-      !input.selectedCandidateRelativePath.includes("\\") &&
-      !input.selectedCandidateRelativePath.includes("\0") &&
-      input.selectedCandidateRelativePath
+      typeof input.sourceRelativePath === "string" &&
+      input.sourceRelativePath.length > 0 &&
+      input.sourceRelativePath.length <= 2048 &&
+      !input.sourceRelativePath.includes("\\") &&
+      !input.sourceRelativePath.includes("\0") &&
+      input.sourceRelativePath
         .split("/")
         .every((part) => part !== "" && part !== "." && part !== "..") &&
       /(?:^|_)content_list_v2\.json$/iu.test(
-        input.selectedCandidateRelativePath.split("/").at(-1) ?? "",
+        input.sourceRelativePath.split("/").at(-1) ?? "",
       )
-    );
-  }
-  if (input.kind === "save_draft") {
-    return (
-      exactKeys(input, [
-        ...baseKeys,
-        "bookId",
-        "expectedUpdatedAt",
-        "requestRelativePath",
-      ]) &&
-      isNullablePositiveInteger(input.bookId) &&
-      input.bookId !== null &&
-      Number.isSafeInteger(input.expectedUpdatedAt) &&
-      Number(input.expectedUpdatedAt) >= 0 &&
-      Number(input.expectedUpdatedAt) <= 8_640_000_000_000_000 &&
-      input.requestRelativePath ===
-        "staging/" + input.jobId + "/save-request.json"
     );
   }
   return false;

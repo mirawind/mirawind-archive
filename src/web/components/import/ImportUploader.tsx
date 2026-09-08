@@ -10,7 +10,6 @@ import {
 } from "../ui/manage-classes";
 import { usePolling } from "../manage/use-polling";
 
-import { CandidateReview, type CandidateView } from "./CandidateReview";
 import {
   jobProgressDetail,
   jobProgressPercent,
@@ -42,7 +41,6 @@ interface JobView {
 
 interface ImportView {
   readonly book_id: number | null;
-  readonly candidates: readonly CandidateView[];
   readonly current_job: JobView | null;
   readonly error_code: string | null;
   readonly import_id: string;
@@ -75,7 +73,7 @@ const workflowStages = [
   ["extract_archive", "解包"],
   ["identify_document", "识别正文"],
   ["organize_structure", "整理结构"],
-  ["build_candidate", "生成阅读预览"],
+  ["build_book", "生成阅读预览"],
 ] as const;
 
 function workflowStage(
@@ -84,13 +82,13 @@ function workflowStage(
 ): (typeof workflowStages)[number][0] {
   if (uploadState !== "idle" || !imported) return "upload";
   const job = imported.current_job;
-  if (job?.kind === "build_candidate") return "build_candidate";
+  if (job?.kind === "build_book") return "build_book";
   if (job?.phase === "organize_structure") return "organize_structure";
   if (job?.phase === "identify_document") return "identify_document";
   if (job?.phase === "extract_archive" || imported.state === "analyzing") {
     return "extract_archive";
   }
-  return imported.preview.state === "ready" ? "build_candidate" : "upload";
+  return imported.preview.state === "ready" ? "build_book" : "upload";
 }
 
 function sendUpload(input: {
@@ -416,9 +414,6 @@ export function ImportUploader() {
             >
               打开出版工作台
             </a>
-          )}
-          {importView.state === "rejected" && (
-            <CandidateReview candidates={importView.candidates} />
           )}
         </section>
       )}

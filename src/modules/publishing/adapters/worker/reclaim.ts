@@ -9,6 +9,7 @@ import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 import { removeExactContainedTree } from "@/platform/filesystem/permanent-removal";
 
 export const versionRetentionGraceMs = 24 * 60 * 60 * 1_000;
+export const previewRetentionGraceMs = 60 * 60 * 1_000;
 
 export interface ReclamationResult {
   readonly failedPaths: readonly string[];
@@ -113,13 +114,14 @@ export async function reclaimRetainedStorage(input: {
       `SELECT versions.id
        FROM book_versions AS versions
        JOIN books ON books.id = versions.book_id
-       WHERE versions.state = 'superseded'
-         AND books.deletion_requested_at IS NULL
-         AND versions.reclaimed_at IS NULL
+       WHERE ((versions.state = 'superseded'
          AND versions.verified_at IS NOT NULL
          AND versions.published_at IS NOT NULL
-         AND versions.published_at <= ?
-         AND versions.id <> books.current_version_id
+         AND versions.published_at <= @publishedCutoff)
+         OR (versions.state = 'discarded' AND versions.complete_at <= @previewCutoff))
+         AND books.deletion_requested_at IS NULL
+         AND versions.reclaimed_at IS NULL
+         AND versions.id IS NOT books.current_version_id
          AND versions.id <> COALESCE((
            SELECT previous.id
            FROM book_versions AS previous
@@ -133,7 +135,10 @@ export async function reclaimRetainedStorage(input: {
          ), '')
        ORDER BY versions.book_id, versions.published_at, versions.id`,
     )
-    .all(cutoffMs) as { id: string }[];
+    .all({
+      publishedCutoff: cutoffMs,
+      previewCutoff: input.nowMs - previewRetentionGraceMs,
+    }) as { id: string }[];
   const failedPaths: string[] = [];
   const reclaimedVersionIds: string[] = [];
   const versions = new VersionRepository(input.database);
@@ -143,7 +148,8 @@ export async function reclaimRetainedStorage(input: {
     const changed = input.database
       .prepare(
         `UPDATE book_versions SET reclaimed_at = ?
-         WHERE id = ? AND state = 'superseded' AND reclaimed_at IS NULL`,
+         WHERE id = ? AND state IN ('superseded','discarded') AND reclaimed_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM books WHERE current_version_id=book_versions.id)`,
       )
       .run(input.nowMs, versionId);
     if (changed.changes !== 1) throw new Error("VERSION_RECLAIM_RACE");

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { analyzeImport } from "@/modules/publishing/adapters/worker/analyze-import";
 import { prepareDraft } from "@/modules/publishing/adapters/worker/prepare-draft";
 import { finalizePreparedDraft } from "@/modules/publishing/adapters/worker/finalize-prepared-draft";
-import { readDraftDocument } from "@/modules/publishing/adapters/filesystem/draft-document";
+import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
 import { readPdfContentsEvidence } from "@/modules/publishing/adapters/filesystem/read-pdf-contents-evidence";
 import { inlineText } from "@/modules/publishing/core/content/content-tree";
 import { createTemporaryDataRoot } from "../../helpers/data-root";
@@ -51,7 +51,7 @@ describe("MinerU v2 draft handoff", () => {
           importId,
           bookId: 1,
           sealedExtractionDirectory,
-          selectedCandidatePath: "result/content_list_v2.json",
+          sourcePath: "result/content_list_v2.json",
           stagingDirectory: resolve(root.path, "staging/preparation"),
         };
         if (mode === "canceled") {
@@ -74,7 +74,7 @@ describe("MinerU v2 draft handoff", () => {
         });
         expect(
           await readFile(
-            resolve(prepared.extractedRoot, input.selectedCandidatePath),
+            resolve(prepared.extractedRoot, input.sourcePath),
             "utf8",
           ),
         ).toContain("Body");
@@ -114,13 +114,13 @@ describe("MinerU v2 draft handoff", () => {
           ],
         ),
       );
-      const book = await readDraftDocument(layout, fixture.book.id);
+      const book = new DocumentRepository(database).read(fixture.book.id);
       const paragraph = book.blocks.find((block) => block.type === "paragraph");
       expect(paragraph && inlineText(paragraph.content)).toBe(
         "中文与 English 排版",
       );
       expect(book.resources).toHaveLength(1);
-      expect(fixture.finalized.candidate).toMatchObject({
+      expect(fixture.finalized.build).toMatchObject({
         sourceUpdatedAt: book.updated_at,
         state: "building",
       });
@@ -138,10 +138,12 @@ describe("MinerU v2 draft handoff", () => {
       expect(repeated).toEqual(fixture.finalized);
       expect(
         database
-          .prepare("SELECT COUNT(*) AS count FROM draft_candidates")
+          .prepare("SELECT COUNT(*) AS count FROM jobs WHERE kind='build_book'")
           .get(),
       ).toEqual({ count: 1 });
-      expect(await readDraftDocument(layout, fixture.book.id)).toEqual(book);
+      expect(new DocumentRepository(database).read(fixture.book.id)).toEqual(
+        book,
+      );
     }));
   it("uses only the original PDF for insufficient contents evidence", async () => {
     const root = await createTemporaryDataRoot("ir-pdf-evidence");
@@ -171,7 +173,7 @@ describe("MinerU v2 draft handoff", () => {
       const prepared = await prepareDraft({
         archivePath,
         bookId: 1,
-        selectedCandidatePath: "result/content_list_v2.json",
+        sourcePath: "result/content_list_v2.json",
         stagingDirectory: resolve(root.path, "staging/preparation"),
         pdfEvidenceReader: reader,
       });
@@ -210,7 +212,7 @@ describe("MinerU v2 draft handoff", () => {
           archivePath,
           stagingDirectory,
           bookId: 1,
-          selectedCandidatePath: "result/content_list_v2.json",
+          sourcePath: "result/content_list_v2.json",
         }),
       ).rejects.toThrow();
       await expect(access(stagingDirectory)).rejects.toMatchObject({

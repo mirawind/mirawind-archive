@@ -6,13 +6,6 @@ import {
   createSafeDiagnostic,
   type SafeDiagnostic,
 } from "@/domain/errors";
-import type {
-  BookMetadata,
-  BookPublishing,
-  BookResource,
-} from "../../core/content/book-document.generated";
-import type { HeadingEdit } from "../../core/content/edit-book";
-import { draftDocumentPath, readDraftHeader } from "./draft-document";
 import { validateDocumentManifest } from "../../core/publication/document-manifest-schema";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 import { resolveContainedPath } from "@/platform/filesystem/contained-path";
@@ -25,60 +18,8 @@ function hidden(message: string): never {
   throw new SafeApplicationError("NOT_FOUND", message, 404);
 }
 
-export interface DraftStoredView {
-  readonly schema_version: 1;
-  readonly book_id: number;
-  readonly updated_at: number;
-  readonly alias: string | null;
-  readonly metadata: BookMetadata;
-  readonly publishing: BookPublishing;
-  readonly resources: readonly BookResource[];
-  readonly structure: readonly (Required<
-    Pick<
-      HeadingEdit,
-      | "block_id"
-      | "display_level"
-      | "title_markdown"
-      | "include_in_toc"
-      | "starts_page"
-      | "exclude_from_numbering"
-    >
-  > &
-    Pick<HeadingEdit, "source_number" | "alias">)[];
-}
-
 export class DraftArtifactReader {
   constructor(private readonly layout: StorageLayout) {}
-  readDraftTimestamp(bookId: number): number {
-    return readDraftHeader(draftDocumentPath(this.layout, bookId), bookId)
-      .updated_at;
-  }
-
-  async readDraftView(bookId: number): Promise<DraftStoredView> {
-    const header = readDraftHeader(
-      draftDocumentPath(this.layout, bookId),
-      bookId,
-    );
-    const path = await resolveContainedPath(
-      this.layout.root,
-      `books/${bookId}/draft/views/${header.updated_at}/view.json`,
-    );
-    const view = JSON.parse(await readFile(path, "utf8")) as DraftStoredView;
-    if (
-      view.schema_version !== 1 ||
-      view.book_id !== bookId ||
-      view.updated_at !== header.updated_at ||
-      !Array.isArray(view.structure) ||
-      !Array.isArray(view.resources)
-    )
-      throw new SafeApplicationError(
-        "DRAFT_VIEW_UNAVAILABLE",
-        "The draft view is unavailable.",
-        503,
-      );
-    return view;
-  }
-
   async readPreviewModel(
     previewRelativePath: string,
   ): Promise<Record<string, unknown>> {
@@ -231,7 +172,7 @@ export class DraftArtifactReader {
       if (!resource) return hidden("The asset was not found.");
       const handle = await openVerifiedContainedFile({
         expectedSize: resource.size,
-        relativePath: `${input.versionRelativePath}/${resource.output_path}`,
+        relativePath: `books/${input.bookId}/${resource.output_path}`,
         root: this.layout.root,
       });
       return Object.freeze({
