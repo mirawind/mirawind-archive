@@ -1,10 +1,7 @@
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import {
-  extractZipFile,
-  type ArchiveExtractionLimits,
-} from "../filesystem/extract-archive";
+import { extractZipFile } from "../filesystem/extract-archive";
 import {
   discoverMineruCandidates,
   type CandidateDiscovery,
@@ -45,10 +42,9 @@ function rejectionCode(reason: CandidateDiscovery["reason"]): string {
 
 export async function analyzeImport(input: {
   readonly archivePath: string;
-  readonly extractionLimits?: Partial<ArchiveExtractionLimits>;
   readonly importId?: string;
   readonly onPhase?: (
-    phase: "identify_document" | "security_check",
+    phase: "identify_document" | "extract_archive",
     completed: number,
     total: number,
   ) => void;
@@ -65,12 +61,11 @@ export async function analyzeImport(input: {
   try {
     await mkdir(dirname(stagingDirectory), { mode: 0o700, recursive: true });
     await mkdir(stagingDirectory, { mode: 0o700, recursive: false });
-    input.onPhase?.("security_check", 0, 2);
+    input.onPhase?.("extract_archive", 0, 2);
     const extracted = await profilePipelineStage("archive_extract", () =>
       extractZipFile({
         archivePath: input.archivePath,
         destination: extractedDirectory,
-        ...(input.extractionLimits ? { limits: input.extractionLimits } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
       }),
     );

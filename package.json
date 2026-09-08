@@ -31,7 +31,6 @@
     "dev:worker": "NODE_ENV=development tsx src/entrypoints/worker/index.ts",
     "format": "prettier --check package.json pnpm-workspace.yaml tsconfig.json tsconfig.processes.json astro.config.mjs eslint.config.js commitlint.config.mjs vitest.config.ts playwright.config.ts CONTRIBUTING.md .github/workflows src tests scripts docs/operations docs/third-party",
     "format:write": "prettier --write package.json pnpm-workspace.yaml tsconfig.json tsconfig.processes.json astro.config.mjs eslint.config.js commitlint.config.mjs vitest.config.ts playwright.config.ts CONTRIBUTING.md .github/workflows src tests scripts docs/operations docs/third-party",
-    "fixtures:build-hostile": "tsx scripts/fixtures/build-hostile-zips.ts",
     "fixtures:build-stress": "tsx scripts/fixtures/build-stress-book.ts",
     "fixtures:author-references": "tsx scripts/fixtures/author-mineru-references.ts",
     "fixtures:compare-references": "tsx scripts/fixtures/compare-mineru-references.ts",

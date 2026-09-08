@@ -1,5 +1,5 @@
 <!--
-Sync Impact Report
+Sync Impact Report (historical 4.1.1; superseded for import trust by the 5.0.0 amendment below)
 - Version change: 4.0.0 → 4.1.1
 - Modified principles:
   - I. Authoritative Sources and Rebuildability: Mirawind-owned structured content IR replaces
@@ -67,13 +67,16 @@ MUST NOT publish `ready`, staging, or orphaned versions without an explicit publ
 Rationale: publication crosses database and filesystem boundaries; ordering and recovery
 rules are product correctness, not optional implementation detail.
 
-### III. Security Boundaries Are End-to-End
+### III. Trusted Imports and Server-Side Access Boundaries
 
 Every request for HTML, images, attachments, search results, administration, and APIs MUST
 enforce server-side authentication and resource authorization. Private data and generated
-book resources MUST remain outside directly served public directories. MinerU ZIPs and all
-imported paths MUST be treated as hostile input and validated against traversal, special
-files, resource exhaustion, malformed media, and parser attacks. Authentication, WebAuthn,
+book resources MUST remain outside directly served public directories. Imports assume a
+good-faith administrator supplying MinerU output. Imports MUST NOT run a separate hostile
+archive or media security review. Standard ZIP parsing, image metadata, content schema
+validation, managed filesystem containment, failure cleanup and operational budgets remain
+normal correctness requirements. Dedicated hostile-import security tests are not required.
+Authentication, WebAuthn,
 password hashing, Markdown parsing, sanitization, and cryptographic behavior MUST use
 maintained libraries rather than project-specific protocol implementations. Logs MUST NOT
 contain credentials, session secrets, private body content, or unsafe raw paths.
@@ -89,7 +92,7 @@ never in a reader request. Reader
 requests MUST use immutable pre-generated artifacts and remain available on the previous
 published version while a rebuild runs. On the reference single-server deployment, an
 uncached public reading response MUST meet the approved p95 target of 300 ms. Background
-jobs MUST enforce the approved upload, extraction, image, path, concurrency, and timeout
+jobs MUST enforce the approved upload, content parsing, concurrency, and timeout
 budgets and MUST be terminable without affecting the Web process.
 
 Rationale: large books make build latency variable; separating build from reads keeps the
@@ -108,7 +111,7 @@ MUST include negative and crash-boundary scenarios. Performance claims MUST be m
 representative and stress fixtures, not inferred from small examples. Work is not complete
 while its intended behavior, implementation, tests and current documentation disagree.
 
-Rationale: this product handles hostile archives and durable publications, so happy-path
+Rationale: this product handles structured content and durable publications, so happy-path
 unit tests alone cannot establish correctness.
 
 ## Architecture Constraints
@@ -170,4 +173,13 @@ Every high-risk feature plan and review MUST perform Constitution Check. Violati
 delivery unless the constitution itself is amended; a plan's Complexity Tracking section may
 explain necessary complexity but cannot waive a MUST requirement.
 
-**Version**: 4.1.1 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-09-07
+## 5.0.0 Amendment
+
+The owner explicitly approved trusted, good-faith imports on 2026-09-08 (D-140).
+Remove custom hostile ZIP inspection, archive rejection budgets and image security scanning,
+their dedicated tests and stale workflow labels. Access control and durable publication
+retain their existing evidence requirements. No persisted body schema or data migration is
+needed; existing books remain readable. Archives are no longer certified against adversarial
+input; ordinary parsing errors still fail and clean incomplete work.
+
+**Version**: 5.0.0 | **Ratified**: 2026-07-24 | **Last Amended**: 2026-09-08

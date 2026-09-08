@@ -42,7 +42,7 @@ authority artifact. Do not silently choose one.
 - Parsing, rendering, image work, and indexing never run in reader requests.
 - All book resources remain outside static public directories and pass through server-side
   authorization.
-- Treat every ZIP entry and imported document as hostile input.
+- Assume good-faith administrator imports (D-140); do not add dedicated hostile-import checks or tests.
 - Do not introduce Redis, another database, object storage, microservices, or multiple app
   instances without an approved architecture and constitution change.
 
@@ -73,7 +73,7 @@ are not presentation-copy tests and remain required.
 
 Tests are mandatory for:
 
-- archive traversal, link/special-file rejection, limits, malformed ZIPs, and cleanup;
+- ordinary import parsing, cancellation, and failure cleanup (D-140 removes hostile-archive tests);
 - schema validation, unknown fields, migrations, and semantic cross-field checks;
 - authentication, authorization, private-resource 404 behavior, cache headers, and downloads;
 - worker leases, interruption, timeout, cancellation, and retry limits;

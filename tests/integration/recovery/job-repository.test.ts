@@ -169,7 +169,7 @@ describe("durable job repository", () => {
         jobId: job.id,
         leaseOwner: "worker-a",
         nowMs: 12_000,
-        phase: "security_check",
+        phase: "extract_archive",
         progress: {
           completed: 12,
           processed_bytes: null,
@@ -178,7 +178,7 @@ describe("durable job repository", () => {
         },
       }),
     ).toMatchObject({
-      phase: "security_check",
+      phase: "extract_archive",
       progress: { completed: 12, total: 20, unit: "items" },
     });
     expect(() =>
@@ -220,7 +220,7 @@ describe("durable job repository", () => {
       jobId: job.id,
       leaseOwner: "worker-a",
       nowMs: 3_000,
-      phase: "security_check",
+      phase: "extract_archive",
       progress: {
         completed: 12,
         processed_bytes: 1_024,
@@ -260,7 +260,7 @@ describe("durable job repository", () => {
           jobId: job.id,
           leaseOwner: "worker-a",
           nowMs: 4_000,
-          phase: "security_check",
+          phase: "extract_archive",
           progress,
         }),
       ).toThrow(/JOB_PROGRESS_/u);

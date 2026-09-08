@@ -200,13 +200,10 @@ authoritative originals.
 After space is restored, start Web and worker, wait for reconciliation, verify current reads
 and inspect the health response.
 
-## 10. Suspected hostile archive incident
+## 10. Failed Archive Import
 
-Cancel the job through the management API/UI and preserve only opaque IDs and safe error
-codes in shared reports. The extractor removes failed staging and rejects traversal, links,
-special files, unsupported/encrypted/multi-disk archives and streamed resource-limit
-violations.
-
-Do not open the archive on the server, extract it with an ad-hoc tool, publish raw paths or
-upload it to a public issue. If deeper investigation is required, copy it by its registered
-hash to an isolated analysis machine under the administrator's data-handling policy.
+Cancel the job through the management API/UI if needed. The extractor removes incomplete
+staging after parsing or write failures. Re-export a complete MinerU v2 ZIP and import it again
+when the source download is incomplete. D-140 trusts good-faith imports and removes custom
+hostile-archive inspection and its dedicated tests; an accepted import is not a security scan.
+Shared reports continue to use opaque IDs and error codes without private book contents.

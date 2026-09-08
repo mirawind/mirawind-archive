@@ -156,7 +156,7 @@ describe("worker health derived snapshot", () => {
     });
     monotonic = 4.25;
     tracker.recordProgress({
-      phase: "security_check",
+      phase: "extract_archive",
       progress: {
         completed: 0,
         processed_bytes: null,
@@ -193,7 +193,7 @@ describe("worker health derived snapshot", () => {
       memory: { peakProcessTreeRssBytes: 8_192 },
       stages: [
         { durationMs: 4.25, phase: "starting" },
-        { durationMs: 5.25, phase: "security_check" },
+        { durationMs: 5.25, phase: "extract_archive" },
       ],
       state: "succeeded",
     });

@@ -17,7 +17,7 @@ describe("job child IPC protocol", () => {
   it("reports phase changes immediately and limits repeated progress to 250ms", () => {
     expect(
       shouldReportJobProgress({
-        lastPhase: "security_check",
+        lastPhase: "extract_archive",
         lastReportedAtMs: 1_000,
         nowMs: 1_001,
         phase: "identify_document",
@@ -25,18 +25,18 @@ describe("job child IPC protocol", () => {
     ).toBe(true);
     expect(
       shouldReportJobProgress({
-        lastPhase: "security_check",
+        lastPhase: "extract_archive",
         lastReportedAtMs: 1_000,
         nowMs: 1_249,
-        phase: "security_check",
+        phase: "extract_archive",
       }),
     ).toBe(false);
     expect(
       shouldReportJobProgress({
-        lastPhase: "security_check",
+        lastPhase: "extract_archive",
         lastReportedAtMs: 1_000,
         nowMs: 1_250,
-        phase: "security_check",
+        phase: "extract_archive",
       }),
     ).toBe(true);
   });
@@ -170,7 +170,7 @@ describe("job child IPC protocol", () => {
   it("accepts only the closed bounded progress shape", () => {
     const base = {
       jobId: createOpaqueId("job"),
-      phase: "security_check",
+      phase: "extract_archive",
       protocolVersion: jobChildProtocolVersion,
       type: "progress",
     };
@@ -209,16 +209,16 @@ describe("job child IPC protocol", () => {
     expect(() =>
       assertJobProgressUpdate({
         current,
-        currentPhase: "security_check",
+        currentPhase: "extract_archive",
         kind: "prepare_draft",
         next: { ...current, completed: 13, processed_bytes: 2_048 },
-        nextPhase: "security_check",
+        nextPhase: "extract_archive",
       }),
     ).not.toThrow();
     expect(() =>
       assertJobProgressUpdate({
         current,
-        currentPhase: "security_check",
+        currentPhase: "extract_archive",
         kind: "prepare_draft",
         next: {
           completed: 0,

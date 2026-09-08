@@ -454,11 +454,11 @@ describe("isolated candidate child builder", () => {
   });
 
   it("rejects an invalid referenced image before a candidate becomes ready", async () => {
-    const dataRoot = await createTemporaryDataRoot("candidate-image-security");
+    const dataRoot = await createTemporaryDataRoot("candidate-image-format");
     try {
       const command = await writeCandidateInput(
         dataRoot,
-        commandFor("image_security_0001"),
+        commandFor("image_format_0001"),
         {
           resource: {
             contents: Buffer.from("not a raster image"),
@@ -474,7 +474,7 @@ describe("isolated candidate child builder", () => {
           layout: dataRoot.layout,
           preparationDiagnostics: [],
         }),
-      ).rejects.toMatchObject({ code: "IMAGE_FORMAT_UNSUPPORTED" });
+      ).rejects.toMatchObject({ code: "IMAGE_DECODE_FAILED" });
       await expect(
         access(
           resolve(

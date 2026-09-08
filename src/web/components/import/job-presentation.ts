@@ -24,7 +24,7 @@ const phaseLabels: Readonly<Record<string, string>> = Object.freeze({
   permanent_book_deletion: "永久删除",
   queued: "等待后台处理",
   render_pages: "渲染页面",
-  security_check: "安全检查",
+  extract_archive: "解包",
   starting: "正在启动",
   validate_edit: "校验修改",
   prepare_save: "保存正文",

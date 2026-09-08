@@ -33,9 +33,9 @@ describe("worker attempt observation", () => {
       startedAtMs: 1_000,
     });
     now = 30;
-    tracker.recordProgress({ phase: "security_check", progress: progress(0) });
+    tracker.recordProgress({ phase: "extract_archive", progress: progress(0) });
     now = 40;
-    tracker.recordProgress({ phase: "security_check", progress: progress(1) });
+    tracker.recordProgress({ phase: "extract_archive", progress: progress(1) });
     now = 70;
     tracker.recordProgress({
       phase: "identify_document",
@@ -65,7 +65,7 @@ describe("worker attempt observation", () => {
       }),
       expect.objectContaining({
         durationMs: 40,
-        phase: "security_check",
+        phase: "extract_archive",
         progress: progress(1),
         status: "completed",
       }),
@@ -95,7 +95,7 @@ describe("worker attempt observation", () => {
       });
       now = 5;
       tracker.recordProgress({
-        phase: "security_check",
+        phase: "extract_archive",
         progress: progress(0, 2),
       });
       now = 9;

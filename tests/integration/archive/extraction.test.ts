@@ -1,62 +1,73 @@
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { afterEach, describe, expect, it, vi } from "vitest";
-
+import { afterEach, describe, expect, it } from "vitest";
+import { extractZipFile } from "@/modules/publishing/adapters/filesystem/extract-archive";
 import { buildZip } from "../../../scripts/fixtures/zip-builder";
 
-const mockedInspection = vi.hoisted(() => ({ archivePath: "" }));
-
-vi.mock(
-  "@/modules/publishing/adapters/filesystem/inspect-zip",
-  async (load) => {
-    const actual =
-      await load<
-        typeof import("@/modules/publishing/adapters/filesystem/inspect-zip")
-      >();
-    return {
-      ...actual,
-      inspectZipFile: (
-        path: string,
-        options: Parameters<typeof actual.inspectZipFile>[1],
-      ) => actual.inspectZipFile(mockedInspection.archivePath || path, options),
-    };
-  },
-);
-
-const { extractZipFile } =
-  await import("@/modules/publishing/adapters/filesystem/extract-archive");
-
 const roots: string[] = [];
-
 afterEach(async () => {
-  mockedInspection.archivePath = "";
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { force: true, recursive: true })),
   );
 });
 
-describe("archive inspection/extraction identity", () => {
-  it("rejects a different second-pass entry set and removes its destination", async () => {
-    const root = await mkdtemp(join(tmpdir(), "archive-identity-"));
-    roots.push(root);
-    const archivePath = join(root, "actual.zip");
-    const inspectedPath = join(root, "inspected.zip");
-    const destination = join(root, "extracted");
-    await writeFile(
-      archivePath,
-      buildZip({ entries: [{ data: "actual", name: "book/actual.md" }] }),
-    );
-    await writeFile(
-      inspectedPath,
-      buildZip({ entries: [{ data: "second", name: "book/other.md" }] }),
-    );
-    mockedInspection.archivePath = inspectedPath;
+async function fixture(bytes: Buffer) {
+  const root = await mkdtemp(join(tmpdir(), "archive-extraction-"));
+  roots.push(root);
+  const archivePath = join(root, "input.zip");
+  await writeFile(archivePath, bytes);
+  return { archivePath, destination: join(root, "extracted") };
+}
 
+describe("archive extraction", () => {
+  it("extracts stored and compressed content with directories and byte counts", async () => {
+    const input = await fixture(
+      buildZip({
+        entries: [
+          { name: "book/" },
+          { name: "book/content_list_v2.json", data: "[]", method: 8 },
+          { name: "book/images/a.bin", data: "image" },
+        ],
+      }),
+    );
+    expect(await extractZipFile(input)).toMatchObject({
+      entries: 3,
+      files: 2,
+      totalUncompressedBytes: 7,
+    });
+    expect(
+      await readFile(
+        join(input.destination, "book/content_list_v2.json"),
+        "utf8",
+      ),
+    ).toBe("[]");
+    expect(
+      await readFile(join(input.destination, "book/images/a.bin"), "utf8"),
+    ).toBe("image");
+  });
+
+  it("cleans incomplete extraction when the ZIP cannot be read", async () => {
+    const input = await fixture(Buffer.from("incomplete download"));
+    await expect(extractZipFile(input)).rejects.toMatchObject({
+      code: "ARCHIVE_MALFORMED",
+    });
+    await expect(access(input.destination)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("honors cancellation before creating output", async () => {
+    const input = await fixture(
+      buildZip({
+        entries: [{ name: "book/content_list_v2.json", data: "[]" }],
+      }),
+    );
     await expect(
-      extractZipFile({ archivePath, destination }),
-    ).rejects.toThrow();
-    await expect(access(destination)).rejects.toThrow();
+      extractZipFile({ ...input, signal: AbortSignal.abort() }),
+    ).rejects.toMatchObject({ code: "ARCHIVE_CANCELED" });
+    await expect(access(input.destination)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });

@@ -1,13 +1,8 @@
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-
 import { BlobReader, ZipReader } from "@zip.js/zip.js";
 import { describe, expect, it } from "vitest";
 
-import { buildHostileZipFixtures } from "../../../scripts/fixtures/build-hostile-zips";
 import { buildStressBook } from "../../../scripts/fixtures/build-stress-book";
 import { buildZip, crc32 } from "../../../scripts/fixtures/zip-builder";
-import { createTemporaryDataRoot } from "../../helpers/data-root";
 
 async function entryNames(bytes: Buffer): Promise<readonly string[]> {
   const copy = new Uint8Array(bytes.length);
@@ -53,34 +48,4 @@ describe("deterministic generated archives", () => {
       buildStressBook({ blocksPerPage: 1, imageCount: 0, pages: 2_001 }),
     ).toThrow(/pages/);
   });
-
-  it("writes the complete hostile matrix with reproducible manifests", async () => {
-    const firstRoot = await createTemporaryDataRoot("hostile-first");
-    const secondRoot = await createTemporaryDataRoot("hostile-second");
-    try {
-      const first = await buildHostileZipFixtures(firstRoot.path);
-      const second = await buildHostileZipFixtures(secondRoot.path);
-      expect(first.length).toBe(20);
-      expect(first).toEqual(second);
-      expect(first.map((entry) => entry.expected_category)).toEqual(
-        expect.arrayContaining([
-          "accepted-control",
-          "archive-path",
-          "archive-special-file",
-          "archive-expansion-ratio",
-          "archive-entry-limit",
-        ]),
-      );
-      const control = await readFile(
-        `${firstRoot.path}/${first[0]?.file_name ?? ""}`,
-      );
-      expect(createHash("sha256").update(control).digest("hex")).toBe(
-        first[0]?.sha256,
-      );
-      expect(await entryNames(control)).toEqual(["book/full.md"]);
-    } finally {
-      await firstRoot.cleanup();
-      await secondRoot.cleanup();
-    }
-  }, 30_000);
 });

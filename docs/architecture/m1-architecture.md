@@ -78,9 +78,11 @@ no Markdown offsets, source fingerprints or preprocessing hash chains exist in t
 ## Import And Compilation
 
 The only book input is a single-book MinerU ZIP containing `content_list_v2.json` or
-`<stem>_content_list_v2.json`. Every archive entry is hostile: traversal, collisions, links, special
-files, encryption and unsupported archive structures are rejected; extraction budgets are enforced
-while streaming. Invalid JSON, unsupported content or missing referenced resources fail explicitly.
+`<stem>_content_list_v2.json`. D-140 assumes a good-faith administrator: zip.js extracts entries
+in a single streaming pass without a custom security inspection or archive rejection budgets.
+Sharp reads image format and dimensions without a separate pixel security scan. Managed filesystem
+containment, cancellation, cleanup, upload/content budgets and normal parsing remain in force.
+Invalid JSON, unsupported content or missing referenced resources fail explicitly.
 
 JSON content kinds directly create IR headings, paragraphs, code, algorithms, formulas, lists,
 images, tables and annotations. Table HTML is parsed into cells; formulas become typed nodes before
@@ -128,15 +130,15 @@ Better Auth and the existing Passkey/password flows own formal authentication. A
 mutations enforce administrator authorization and same-origin protection. No book asset lives in a
 static public directory. Visibility is checked before ETag/Range processing on every resource request.
 
-| Response | Anonymous Access | Cache | Indexing |
-| --- | --- | --- | --- |
-| Current public HTML | Allowed | Public revalidation | Allowed |
-| Public versioned book asset | Allowed after authorization | Private immutable | Via page |
-| Public original ZIP | Allowed after authorization | Private, no-store | Forbidden |
-| Private book or private asset | 404 | No-store | Forbidden |
-| Management API, draft, preview | Administrator only | Private, no-store | Forbidden |
-| Signed candidate asset | Bound token/session | Private, no-store | Forbidden |
-| Site JS/CSS/fonts | Allowed, contains no book data | Public immutable | Not content |
+| Response                       | Anonymous Access               | Cache               | Indexing    |
+| ------------------------------ | ------------------------------ | ------------------- | ----------- |
+| Current public HTML            | Allowed                        | Public revalidation | Allowed     |
+| Public versioned book asset    | Allowed after authorization    | Private immutable   | Via page    |
+| Public original ZIP            | Allowed after authorization    | Private, no-store   | Forbidden   |
+| Private book or private asset  | 404                            | No-store            | Forbidden   |
+| Management API, draft, preview | Administrator only             | Private, no-store   | Forbidden   |
+| Signed candidate asset         | Bound token/session            | Private, no-store   | Forbidden   |
+| Site JS/CSS/fonts              | Allowed, contains no book data | Public immutable    | Not content |
 
 The worker owns leases, heartbeat, cancellation, timeout and retry limits. Recovery reconciles durable
 save receipts first, contains orphaned version trees and checks current publications. A corrupted
@@ -154,7 +156,7 @@ This is a clean switch, not an old-library migration. Initialize a fresh root an
 ZIPs. Old databases are rejected. The retired local Docker services and their dedicated volume were
 removed under D-139; other roots are not automatically deleted or reinterpreted.
 
-Verification covers archive security, schemas, heading policy, edit fidelity, concurrent saves,
+Verification covers ordinary extraction and cleanup, schemas, heading policy, edit fidelity, concurrent saves,
 clock rollback, cancellation, retries, crash recovery, publication races, authorization and private
 resource isolation. Browser workflows assert data and behavior, not fixed UI wording or styling.
 

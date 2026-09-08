@@ -3,11 +3,7 @@ import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { isOpaqueId } from "@/domain/ids";
-import {
-  archiveResourceLimits,
-  type ArchiveExtractionResult,
-} from "./extract-archive";
-import { maximumArchiveEntries } from "./inspect-zip";
+import type { ArchiveExtractionResult } from "./extract-archive";
 import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
 
 const markerFilename = "marker.json";
@@ -91,13 +87,11 @@ function parseMarker(
     !isOpaqueId("import", expectedImportId) ||
     !Number.isSafeInteger(marker.entries) ||
     Number(marker.entries) < 1 ||
-    Number(marker.entries) > maximumArchiveEntries ||
     !Number.isSafeInteger(marker.files) ||
     Number(marker.files) < 1 ||
     Number(marker.files) > Number(marker.entries) ||
     !Number.isSafeInteger(marker.totalUncompressedBytes) ||
-    Number(marker.totalUncompressedBytes) < 1 ||
-    Number(marker.totalUncompressedBytes) > archiveResourceLimits.totalBytes
+    Number(marker.totalUncompressedBytes) < 1
   ) {
     throw new Error("SEALED_EXTRACTION_MARKER_INVALID");
   }

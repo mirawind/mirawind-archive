@@ -72,7 +72,7 @@ const terminalJobStates = new Set<JobState>([
 
 const workflowStages = [
   ["upload", "上传"],
-  ["security_check", "安全检查"],
+  ["extract_archive", "解包"],
   ["identify_document", "识别正文"],
   ["organize_structure", "整理结构"],
   ["build_candidate", "生成阅读预览"],
@@ -87,8 +87,8 @@ function workflowStage(
   if (job?.kind === "build_candidate") return "build_candidate";
   if (job?.phase === "organize_structure") return "organize_structure";
   if (job?.phase === "identify_document") return "identify_document";
-  if (job?.phase === "security_check" || imported.state === "analyzing") {
-    return "security_check";
+  if (job?.phase === "extract_archive" || imported.state === "analyzing") {
+    return "extract_archive";
   }
   return imported.preview.state === "ready" ? "build_candidate" : "upload";
 }
@@ -319,7 +319,7 @@ export function ImportUploader() {
             />
             <p className="mt-2 text-sm text-stone-600">
               {uploadState === "accepting"
-                ? "正在安全保存并排队"
+                ? "正在保存并排队"
                 : `${uploadBytes.loaded.toLocaleString()} / ${uploadBytes.total.toLocaleString()} 字节 · ${uploadPercent}%`}
             </p>
           </div>

@@ -44,14 +44,14 @@ const jobPhases = Object.freeze({
   analyze_import: [
     "queued",
     "starting",
-    "security_check",
+    "extract_archive",
     "identify_document",
     ...terminalPhases,
   ],
   prepare_draft: [
     "queued",
     "starting",
-    "security_check",
+    "extract_archive",
     "identify_document",
     "organize_structure",
     ...terminalPhases,

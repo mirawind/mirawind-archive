@@ -3,10 +3,7 @@ import { createReadStream } from "node:fs";
 import { chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { createOpaqueId } from "@/domain/ids";
-import {
-  extractZipFile,
-  type ArchiveExtractionLimits,
-} from "../filesystem/extract-archive";
+import { extractZipFile } from "../filesystem/extract-archive";
 import { claimSealedExtraction } from "../filesystem/sealed-extraction";
 import { readJsonDocument } from "../filesystem/read-json-document";
 import { importMineruContent } from "../../core/preparation/mineru-content";
@@ -35,7 +32,6 @@ export interface PrepareDraftResult {
 export async function prepareDraft(input: {
   readonly archivePath: string;
   readonly bookId: number;
-  readonly extractionLimits?: Partial<ArchiveExtractionLimits>;
   readonly importId?: string;
   readonly selectedCandidatePath: string;
   readonly sealedExtractionDirectory?: string;
@@ -44,7 +40,7 @@ export async function prepareDraft(input: {
   readonly typographyProfile?: "verbatim-v1" | "zh-smart-v2";
   readonly pdfEvidenceReader?: PdfEvidenceReader;
   readonly onPhase?: (
-    phase: "identify_document" | "organize_structure" | "security_check",
+    phase: "identify_document" | "organize_structure" | "extract_archive",
     completed: number,
     total: number,
   ) => void;
@@ -54,7 +50,7 @@ export async function prepareDraft(input: {
   const preparedRoot = resolve(staging, "prepared");
   try {
     await mkdir(staging, { recursive: true, mode: 0o700 });
-    input.onPhase?.("security_check", 0, 3);
+    input.onPhase?.("extract_archive", 0, 3);
     const sealed =
       input.importId && input.sealedExtractionDirectory
         ? await claimSealedExtraction({
@@ -67,7 +63,6 @@ export async function prepareDraft(input: {
       await extractZipFile({
         archivePath: input.archivePath,
         destination: extractedRoot,
-        ...(input.extractionLimits ? { limits: input.extractionLimits } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
       });
     input.signal?.throwIfAborted();
