@@ -5,9 +5,9 @@ import { BookDeletionRepository } from "@/modules/catalog/adapters/sqlite/book-d
 import { SqliteBookPublishingCleanup } from "@/modules/publishing/adapters/sqlite/book-cleanup";
 import {
   JobRepository,
-  type JobErrorClass,
   type JobRecord,
 } from "@/modules/publishing/adapters/sqlite/jobs";
+import type { JobErrorClass } from "@/modules/publishing/application/publishing-api";
 import { withImmediateTransaction } from "@/platform/sqlite/immediate-transaction";
 
 function deletionErrorCode(errorClass: JobErrorClass, errorCode: string) {

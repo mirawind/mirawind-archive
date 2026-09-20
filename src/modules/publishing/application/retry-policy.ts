@@ -1,4 +1,9 @@
-import { isTerminalJobState, type JobKind, type JobState } from "./job-state";
+import {
+  isTerminalJobState,
+  isJobErrorClass,
+  type JobKind,
+  type JobState,
+} from "./job-state";
 
 export interface RetryableJob {
   readonly automaticRetryCount: number;
@@ -20,15 +25,6 @@ export type JobRetryDecision =
         | "AUTOMATIC_RETRY_LIMIT_REACHED"
         | "JOB_NOT_RETRYABLE";
     }>;
-
-const manualRetryClasses = new Set([
-  "canceled",
-  "content",
-  "infrastructure",
-  "security_limit",
-  "timeout",
-  "validation",
-]);
 
 export function evaluateJobRetry(
   job: RetryableJob,
@@ -59,7 +55,7 @@ export function evaluateJobRetry(
     return { allowed: true };
   }
 
-  return job.errorClass && manualRetryClasses.has(job.errorClass)
+  return isJobErrorClass(job.errorClass)
     ? { allowed: true }
     : { allowed: false, reason: "JOB_NOT_RETRYABLE" };
 }

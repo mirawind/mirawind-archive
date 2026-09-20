@@ -94,7 +94,7 @@ it. The worker replaces old or malformed health formats on startup; SQLite task 
 immutable publication pointers remain authoritative.
 
 An expired running lease becomes interrupted. Only a first infrastructure interruption may
-retry automatically. Content, validation, security-limit, timeout, cancellation and second
+retry automatically. Content, validation, timeout, cancellation and second
 interruption failures require an explicit administrator retry. A recovered `ready` version
 is never automatically published.
 

@@ -4,18 +4,11 @@ import { isOpaqueId } from "@/domain/ids";
 import {
   assertJobProgressUpdate,
   type JobKind,
+  type JobErrorClass,
   type JobPhase,
   type JobProgress,
   type TerminalJobState,
 } from "@/modules/publishing/application/publishing-api";
-
-export type AttemptErrorClass =
-  | "infrastructure"
-  | "content"
-  | "validation"
-  | "security_limit"
-  | "timeout"
-  | "canceled";
 
 export interface ProcessTreeMemoryObservation {
   readonly failedSamples: number;
@@ -36,7 +29,7 @@ export interface StageObservation {
 export interface AttemptObservation {
   readonly attempt: number;
   readonly durationMs: number;
-  readonly errorClass: AttemptErrorClass | null;
+  readonly errorClass: JobErrorClass | null;
   readonly errorCode: string | null;
   readonly finishedAtMs: number | null;
   readonly jobId: string;
@@ -192,7 +185,7 @@ export class AttemptObservationTracker {
   }
 
   complete(input: {
-    readonly errorClass: AttemptErrorClass | null;
+    readonly errorClass: JobErrorClass | null;
     readonly errorCode: string | null;
     readonly finishedAtMs: number;
     readonly memory: ProcessTreeMemoryObservation;

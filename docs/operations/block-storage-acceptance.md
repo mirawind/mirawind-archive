@@ -1,5 +1,32 @@
 # Block Storage Acceptance
 
+Current follow-up: D-142 removes the obsolete import-review failure category. The local database
+now uses `mirawind-block-storage-v2`; IR and publication artifacts retain their existing formats.
+The original D-141 measurement and import evidence below remains applicable to the body pipeline.
+
+## Import Review Cleanup
+
+Removed the retired task failure classification from SQLite, worker IPC, health snapshots, retry
+policy and HTTP contracts, including its dedicated retry fixtures. Job error classes now have one
+Publishing definition; ordinary content budgets are reported as content errors. No independent
+ZIP/media security-review stage, table or failure category remains. Authentication, renderer
+sanitization, authorized resource serving and publication recovery remain operational.
+
+The offline local schema update was exercised on a disposable SQLite copy with an injected failure
+after rebuilding the task table. Schema and every business-table row remained unchanged on rollback.
+The successful update preserves every business-table row and task rowid, including 16 books and
+48 tasks. SQLite integrity, foreign keys and the new baseline ledger pass. The temporary database
+and one-time update script were deleted after execution; no migration adapter was added.
+
+Verification: 595 tests across 109 files pass, including a real child process reporting a content
+node-budget failure and cleaning its unfinished build without changing the accepted draft.
+All 17 browser workflows pass, including real MinerU import/publication, desktop/mobile reading
+and worker interruption/retry. Typecheck, lint, formatting and the production build pass.
+On 2026-09-20, the resumed local runtime serves workbench, preview and published HTML successfully;
+health schema v3 reports an empty queue. SQLite integrity and foreign keys were rechecked.
+Evidence is recorded in ignored `.cache/security-cleanup-*.log` and
+`.cache/security-cleanup-database.json`.
+
 Date: 2026-09-09. Authority: constitution 5.1.0 and D-141. This supersedes the active-runtime
 claims in `content-refactor-acceptance.md`; earlier measurement reports remain historical evidence.
 

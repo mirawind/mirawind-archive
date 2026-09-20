@@ -4,13 +4,13 @@ import { isOpaqueId } from "@/domain/ids";
 import {
   isJobPhase,
   isJobProgress,
+  isJobErrorClass,
   jobKinds,
   type JobKind,
   type QueueObservation,
   type TerminalJobState,
 } from "@/modules/publishing/application/publishing-api";
 import type {
-  AttemptErrorClass,
   AttemptObservation,
   ProcessTreeMemoryObservation,
   StageObservation,
@@ -18,7 +18,7 @@ import type {
 import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
 
 export const maximumWorkerHealthBytes = 64 * 1_024;
-export const workerHealthSchemaVersion = 2 as const;
+export const workerHealthSchemaVersion = 3 as const;
 export const workerHealthCoalesceMs = 1_000;
 
 export interface WorkerHealthSnapshot {
@@ -257,17 +257,7 @@ function parseAttempt(value: unknown): AttemptObservation {
     throw new Error("WORKER_HEALTH_ATTEMPT_STATE_INVALID");
   }
   const errorClass = item.errorClass;
-  if (
-    errorClass !== null &&
-    ![
-      "infrastructure",
-      "content",
-      "validation",
-      "security_limit",
-      "timeout",
-      "canceled",
-    ].includes(String(errorClass))
-  ) {
+  if (errorClass !== null && !isJobErrorClass(errorClass)) {
     throw new Error("WORKER_HEALTH_ATTEMPT_ERROR_CLASS_INVALID");
   }
   const errorCode =
@@ -293,7 +283,7 @@ function parseAttempt(value: unknown): AttemptObservation {
       item.durationMs,
       "WORKER_HEALTH_ATTEMPT_DURATION_INVALID",
     ),
-    errorClass: errorClass as AttemptErrorClass | null,
+    errorClass,
     errorCode,
     finishedAtMs,
     jobId: item.jobId,

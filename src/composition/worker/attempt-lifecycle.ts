@@ -13,9 +13,9 @@ import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import {
   JobRepository,
-  type JobErrorClass,
   type JobRecord,
 } from "@/modules/publishing/adapters/sqlite/jobs";
+import type { JobErrorClass } from "@/modules/publishing/application/publishing-api";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 import { resolveContainedPath } from "@/platform/filesystem/contained-path";
 import { withImmediateTransaction } from "@/platform/sqlite/immediate-transaction";

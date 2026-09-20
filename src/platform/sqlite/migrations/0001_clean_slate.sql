@@ -1,8 +1,8 @@
 CREATE TABLE database_baseline (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  identity TEXT NOT NULL UNIQUE CHECK (identity = 'mirawind-block-storage-v1')
+  identity TEXT NOT NULL UNIQUE CHECK (identity = 'mirawind-block-storage-v2')
 ) STRICT;
-INSERT INTO database_baseline (id, identity) VALUES (1, 'mirawind-block-storage-v1');
+INSERT INTO database_baseline (id, identity) VALUES (1, 'mirawind-block-storage-v2');
 
 CREATE TABLE installation (
   id INTEGER PRIMARY KEY CHECK (id = 1), admin_user_id TEXT UNIQUE,
@@ -104,7 +104,7 @@ CREATE TABLE jobs (
   progress_json TEXT NOT NULL DEFAULT '{"completed":0,"total":null,"unit":"steps","processed_bytes":null}'
     CHECK (json_valid(progress_json) AND length(progress_json) <= 65536),
   error_code TEXT CHECK (error_code IS NULL OR length(error_code) <= 80),
-  error_class TEXT CHECK (error_class IS NULL OR error_class IN ('infrastructure','content','validation','security_limit','timeout','canceled')),
+  error_class TEXT CHECK (error_class IS NULL OR error_class IN ('infrastructure','content','validation','timeout','canceled')),
   error_detail_json TEXT CHECK (error_detail_json IS NULL OR (json_valid(error_detail_json) AND length(error_detail_json) <= 65536)),
   cancellation_requested_at INTEGER, created_at INTEGER NOT NULL, started_at INTEGER, finished_at INTEGER,
   CHECK ((state = 'running' AND lease_owner IS NOT NULL AND lease_until IS NOT NULL) OR state != 'running')

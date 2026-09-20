@@ -7,6 +7,21 @@ export const userJobKinds = [
 
 export const jobKinds = userJobKinds;
 
+export const jobErrorClasses = [
+  "infrastructure",
+  "content",
+  "validation",
+  "timeout",
+  "canceled",
+] as const;
+export type JobErrorClass = (typeof jobErrorClasses)[number];
+export function isJobErrorClass(value: unknown): value is JobErrorClass {
+  return (
+    typeof value === "string" &&
+    (jobErrorClasses as readonly string[]).includes(value)
+  );
+}
+
 export type JobKind = (typeof jobKinds)[number];
 export type UserJobKind = (typeof userJobKinds)[number];
 export type JobState =

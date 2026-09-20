@@ -56,7 +56,7 @@ describe("structured log redaction", () => {
           runningCount: 0,
         },
         recentAttempt: null,
-        schemaVersion: 2,
+        schemaVersion: 3,
         status: "healthy",
         walBytes: 0,
         warnings: [],

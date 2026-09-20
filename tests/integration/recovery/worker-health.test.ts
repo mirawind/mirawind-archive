@@ -40,7 +40,7 @@ function health(queuedCount = 0): WorkerHealthSnapshot {
       runningCount: 0,
     },
     recentAttempt: null,
-    schemaVersion: 2,
+    schemaVersion: 3,
     status: "healthy",
     walBytes: 0,
     warnings: [],
@@ -68,7 +68,7 @@ describe("worker health derived snapshot", () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(await readWorkerHealthSnapshot(path)).toMatchObject({
       queue: { queuedCount: 1 },
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
   });
 

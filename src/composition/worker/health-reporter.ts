@@ -7,6 +7,7 @@ import { createLogger } from "@/observability/logger";
 import {
   WorkerHealthFileReporter,
   workerHealthCoalesceMs,
+  workerHealthSchemaVersion,
   type WorkerHealthSnapshot,
 } from "@/observability/worker-health";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
@@ -95,7 +96,7 @@ export class WorkerHealthReporter {
       lease: this.checkpoint.lease,
       queue: this.queue,
       recentAttempt: this.recentAttempt,
-      schemaVersion: 2,
+      schemaVersion: workerHealthSchemaVersion,
       status: this.checkpoint.status,
       walBytes: this.checkpoint.walBytes,
       warnings: this.checkpoint.warnings,

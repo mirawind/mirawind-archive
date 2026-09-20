@@ -11,20 +11,13 @@ import {
   isUserJobKind,
   isTerminalJobState,
   type JobProgress,
+  type JobErrorClass,
   type JobKind,
   type QueueObservation,
   type JobState,
   type TerminalJobState,
   type UserJobKind,
 } from "../../application/job-state";
-
-export type JobErrorClass =
-  | "infrastructure"
-  | "content"
-  | "validation"
-  | "security_limit"
-  | "timeout"
-  | "canceled";
 
 interface JobRow {
   attempt: number;

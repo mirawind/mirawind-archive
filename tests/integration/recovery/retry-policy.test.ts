@@ -75,8 +75,8 @@ describe("job retry policy", () => {
       }),
       terminalJob({ errorClass: "timeout", errorCode: "JOB_TIMEOUT" }),
       terminalJob({
-        errorClass: "security_limit",
-        errorCode: "ARCHIVE_LIMIT",
+        errorClass: "content",
+        errorCode: "BOOK_DOCUMENT_LIMIT_EXCEEDED",
       }),
     ]) {
       expect(evaluateJobRetry(job, "automatic").allowed).toBe(false);
@@ -153,8 +153,8 @@ describe("job retry policy", () => {
 
   it.each([
     ["content", "CONTENT_INVALID"],
+    ["content", "BOOK_DOCUMENT_LIMIT_EXCEEDED"],
     ["validation", "SCHEMA_INVALID"],
-    ["security_limit", "ARCHIVE_LIMIT"],
     ["timeout", "JOB_TIMEOUT"],
     ["infrastructure", "JOB_LEASE_EXPIRED"],
     ["canceled", "JOB_CANCELED"],

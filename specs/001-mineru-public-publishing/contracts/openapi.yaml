@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Mirawind MinerU Publishing API
-  version: 3.0.0
+  version: 3.1.0
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -2168,7 +2168,6 @@ components:
             - infrastructure
             - content
             - validation
-            - security_limit
             - timeout
             - canceled
         created_at:

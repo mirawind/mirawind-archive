@@ -73,9 +73,6 @@ function safeErrorClass(
   if (!(error instanceof SafeApplicationError)) return "infrastructure";
   if (error.code.includes("CANCELED")) return "canceled";
   if (error.code.includes("TIMEOUT")) return "timeout";
-  if (error.code.includes("LIMIT")) {
-    return "security_limit";
-  }
   return "content";
 }
 

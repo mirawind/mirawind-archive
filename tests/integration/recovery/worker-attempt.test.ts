@@ -52,7 +52,7 @@ describe("worker attempt terminal coordinator", () => {
           result: {
             jobId: command.jobId,
             ok: false,
-            protocolVersion: 7,
+            protocolVersion: 8,
             safeErrorClass: "content",
             safeErrorCode: "TEST_CHILD_FAILURE",
             type: "result",

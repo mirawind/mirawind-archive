@@ -1,11 +1,16 @@
 # Block Storage Implementation
 
-Authority: constitution 5.1.0 and D-141. This supersedes the mutable-file and independent
+Authority: constitution 5.1.0, D-141 and D-142. This supersedes the mutable-file and independent
 candidate parts of `structured-content-ir.md`. Import trust follows D-140.
 
 SQLite owns the document header and ordered top-level IR blocks. Nested identities belong to
 their root record. IR v1 remains the semantic schema. No editable JSON file, NDJSON view,
 independent candidate table or save worker is retained.
+
+D-142 uses database baseline `mirawind-block-storage-v2`, removing the retired import-review
+failure category. Job error classes are defined once in Publishing: infrastructure, content,
+validation, timeout and canceled. Normal content budget failures are content errors. Worker IPC v8
+and health schema v3 use the same definitions; old health snapshots are discarded and regenerated.
 
 Saving prepares a patch outside a write transaction, checks the expected document timestamp,
 then commits changed rows and the next timestamp together. No-op writes preserve the timestamp.

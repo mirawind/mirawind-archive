@@ -2,6 +2,8 @@ import { isOpaqueId } from "@/domain/ids";
 import {
   isKnownJobPhase,
   isJobProgress,
+  isJobErrorClass,
+  type JobErrorClass,
   userJobKinds,
   parseBuildBookCommand,
   type BuildBookCommand,
@@ -10,7 +12,7 @@ import {
   type JobProgressUnit,
 } from "@/modules/publishing/application/publishing-api";
 
-export const jobChildProtocolVersion = 7;
+export const jobChildProtocolVersion = 8;
 
 interface FrozenJobCommandBase {
   readonly attempt: number;
@@ -73,13 +75,7 @@ export interface JobResultMessage {
   readonly ok: boolean;
   readonly protocolVersion: typeof jobChildProtocolVersion;
   readonly result?: Readonly<Record<string, string | number | boolean | null>>;
-  readonly safeErrorClass?:
-    | "infrastructure"
-    | "content"
-    | "validation"
-    | "security_limit"
-    | "timeout"
-    | "canceled";
+  readonly safeErrorClass?: JobErrorClass;
   readonly safeErrorCode?: string;
   readonly type: "result";
 }
@@ -235,6 +231,11 @@ export function isChildToParentMessage(
     );
   }
   if (value.type !== "result" || typeof value.ok !== "boolean") return false;
+  if (
+    value.safeErrorClass !== undefined &&
+    !isJobErrorClass(value.safeErrorClass)
+  )
+    return false;
   if (value.result !== undefined && !isSafeScalarRecord(value.result)) {
     return false;
   }

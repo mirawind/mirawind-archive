@@ -6,13 +6,13 @@ import {
   type Migration,
 } from "./migrate";
 
-export const databaseBaselineIdentity = "mirawind-block-storage-v1";
+export const databaseBaselineIdentity = "mirawind-block-storage-v2";
 
 const migrationDefinitions = [
   {
     baselineIdentity: databaseBaselineIdentity,
     checksum:
-      "4017e643526a04e60ff4f2c2a4b43938b0d73feca1667837d5130396f166de4e",
+      "52384f5035dfc3a97e142370bd4a9539e8a35b9b8b29c9ce50d35af9af1a03f6",
     file: "0001_clean_slate.sql",
     name: "block_storage_clean_slate",
     version: 1,

@@ -263,7 +263,7 @@ test("shows, cancels, retries and recovers durable work without changing publica
         queuedCount: expect.any(Number),
         runningCount: expect.any(Number),
       },
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
     expect(
       healthBody.worker?.recentAttempt?.stages.every(

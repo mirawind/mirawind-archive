@@ -238,6 +238,17 @@ describe("job child IPC protocol", () => {
       type: "result",
     };
     expect(isChildToParentMessage(result)).toBe(true);
+    for (const safeErrorClass of [
+      "content",
+      "validation",
+      "infrastructure",
+      "timeout",
+      "canceled",
+    ])
+      expect(isChildToParentMessage({ ...result, safeErrorClass })).toBe(true);
+    expect(
+      isChildToParentMessage({ ...result, safeErrorClass: "unknown" }),
+    ).toBe(false);
     expect(isChildToParentMessage({ ...result, protocolVersion: 99 })).toBe(
       false,
     );

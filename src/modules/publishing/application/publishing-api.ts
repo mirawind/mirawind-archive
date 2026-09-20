@@ -10,6 +10,7 @@ import {
   isKnownJobPhase,
   isJobProgress,
   jobKinds,
+  isJobErrorClass,
   userJobKinds,
 } from "./job-state";
 import { evaluateJobRetry } from "./retry-policy";
@@ -40,6 +41,7 @@ export type {
   ReaderManifestResourceProjection,
 } from "./publication-formats";
 export type {
+  JobErrorClass,
   JobProgress,
   JobProgressUnit,
   JobKind,
@@ -73,6 +75,7 @@ export {
   isJobPhase,
   isJobProgress,
   isKnownJobPhase,
+  isJobErrorClass,
   jobKinds,
   userJobKinds,
   m1ImportExpiryMs,

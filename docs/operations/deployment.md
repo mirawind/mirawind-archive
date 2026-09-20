@@ -195,11 +195,17 @@ docker compose -f docker/compose.yaml ps
 
 `migrate` acquires the schema lock and verifies that the data root belongs to the current
 release family. Follow the release's documented schema-transition policy before replacing
-the image. D-141 uses baseline `mirawind-block-storage-v1`: initialize a new data root and
+the image. D-142 uses baseline `mirawind-block-storage-v2`: initialize a new data root and
 administrator, then reimport MinerU v2 ZIPs. Do not attach older databases or edit migration
 checksums. The owner authorized deleting this project's old `data/library`, `data/development`
 and `data/ir-v1` after stopping writers and disconnecting database clients; this is a one-time
 reset, not an automatic migration or ordinary upgrade policy. It provides no old-data rollback.
+
+D-142's local cleanup rebuilt only the task constraint and baseline marker while offline, after
+verifying a database copy and injected rollback. All existing content, task rowids and publication
+pointers were preserved. That one-time procedure is not an installed migration or compatibility
+path. Startup accepts only the current baseline. Remove stale worker health snapshots on this
+switch; the worker regenerates health schema v3.
 
 ## 7. Monitoring
 
@@ -211,7 +217,7 @@ Use three layers:
 3. Host monitoring: free filesystem space, RAM pressure, container restarts and backup age.
 
 The authenticated `GET /api/manage/health` response includes Web-process request metrics,
-WAL bytes and the worker's strict private health snapshot. Worker health schema v2 includes
+WAL bytes and the worker's strict private health snapshot. Worker health schema v3 includes
 queued/running counts, oldest queued age, the current or most recent attempt, contiguous
 phase durations and nullable process-tree peak RSS. It is private, non-cacheable and must
 not be published as an anonymous health endpoint.
