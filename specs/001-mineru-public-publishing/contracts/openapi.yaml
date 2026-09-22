@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Mirawind MinerU Publishing API
-  version: 4.0.0
+  version: 4.1.0
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -665,6 +665,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
       description: Commits a batch of block edits and optional metadata/settings atomically. All block types use blocks[]; duplicate IDs and overlapping parent/child edits are rejected. Responses require administrator authorization and are neither cached nor indexed.
+  /api/manage/books/{bookId}/draft/images:
+    get:
+      tags: [Drafts]
+      operationId: listDraftImages
+      summary: List available book-owned images
+      description: Administrator-only resource catalogue, independent of build readiness or freshness. Includes unused imported images; pending deletions are omitted. Anonymous or missing books return indistinguishable 404 responses. Never cached or indexed.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Available images and current draft cover selection
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [images]
+                properties:
+                  images:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required:
+                        [
+                          resource_id,
+                          path,
+                          url,
+                          media_type,
+                          size_bytes,
+                          width,
+                          height,
+                          selected,
+                        ]
+                      properties:
+                        resource_id: { type: string }
+                        path: { type: string }
+                        url: { type: string }
+                        media_type: { type: string }
+                        size_bytes: { type: integer, minimum: 0 }
+                        width: { type: integer, minimum: 1 }
+                        height: { type: integer, minimum: 1 }
+                        selected: { type: boolean }
+        "404":
+          $ref: "#/components/responses/HiddenOrMissingJson"
+  /api/manage/books/{bookId}/draft/images/{resourceId}:
+    get:
+      tags: [Drafts]
+      operationId: getDraftImage
+      summary: Read an available image from the book resource catalogue
+      description: Administrator-only; resource must belong to this active book and not be pending deletion. Does not require a ready build. Anonymous, missing and unavailable images return 404. Never cached or indexed.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+        - name: resourceId
+          in: path
+          required: true
+          schema: { type: string, pattern: "^res_[A-Za-z0-9_-]{16,80}$" }
+      responses:
+        "200":
+          description: Original registered image bytes with their image media type
+          headers:
+            Cache-Control:
+              schema: { type: string, const: "private, no-store" }
+        "404":
+          $ref: "#/components/responses/HiddenOrMissingJson"
   /api/manage/books/{bookId}/build:
     post:
       tags:

@@ -3,6 +3,34 @@ import { describe, expect, it } from "vitest";
 import { runWorkerLoop } from "@/composition/worker/loop";
 
 describe("worker loop idle maintenance", () => {
+  it("gives periodic maintenance a turn before claiming more queued work", async () => {
+    const shutdown = new AbortController();
+    const events: string[] = [];
+    await runWorkerLoop({
+      builds: {} as never,
+      database: { prepare: () => ({ all: () => [] }) } as never,
+      drafts: {} as never,
+      imports: {} as never,
+      layout: {} as never,
+      async onMaintenance() {
+        events.push("maintenance");
+      },
+      repository: {
+        interruptExpired: () => [],
+        listPendingAutomaticRetries: () => [],
+        observeQueue: () => ({ queuedCount: 20 }),
+        claimNext() {
+          events.push("claim");
+          shutdown.abort();
+          return null;
+        },
+      } as never,
+      scheduler: { checkpointIfDue: async () => null } as never,
+      shutdownSignal: shutdown.signal,
+      workerId: "worker:busy",
+    });
+    expect(events).toEqual(["maintenance", "claim"]);
+  });
   it("runs maintenance once after finding no user work", async () => {
     const shutdown = new AbortController();
     let claims = 0;

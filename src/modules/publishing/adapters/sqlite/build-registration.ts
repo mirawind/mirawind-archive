@@ -8,6 +8,7 @@ import type { BookVersionPresentationWriter } from "@/modules/catalog/applicatio
 import { readBuildSearchSpool } from "../filesystem/build-search-spool";
 import { VersionRepository } from "./versions";
 import { DocumentRepository } from "./documents";
+import { ResourceRepository } from "./resources";
 import { JobRepository } from "./jobs";
 import type { BuildRegistrationPort } from "../../application/commands/finalize-build";
 import {
@@ -159,9 +160,9 @@ export class BuildRegistrationRepository implements BuildRegistrationPort<Regist
         throw new Error("BUILD_FINALIZATION_STALE");
       this.database
         .prepare(
-          "UPDATE book_versions SET state='discarded' WHERE book_id=? AND state='ready'",
+          "UPDATE book_versions SET state='discarded',retired_at=? WHERE book_id=? AND state='ready'",
         )
-        .run(input.command.bookId);
+        .run(input.nowMs, input.command.bookId);
       new VersionRepository(this.database).registerReadyWithSearch({
         blockingDiagnosticCount: input.artifact.blockingDiagnosticCount,
         bookId: input.command.bookId,
@@ -187,6 +188,11 @@ export class BuildRegistrationRepository implements BuildRegistrationPort<Regist
         versionMarkerSha256: input.artifact.versionMarkerSha256,
         versionRelativePath: input.artifact.artifactRootRelativePath,
       });
+      new ResourceRepository(this.database).registerVersion(
+        input.command.bookId,
+        input.command.versionId,
+        Object.keys(manifest.resources as Record<string, unknown>),
+      );
       this.crashPoint?.("after_version_before_job");
       new JobRepository(this.database).completeSuccess({
         jobId: input.command.jobId,

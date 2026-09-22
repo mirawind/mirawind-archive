@@ -195,7 +195,7 @@ docker compose -f docker/compose.yaml ps
 
 `migrate` acquires the schema lock and verifies that the data root belongs to the current
 release family. Follow the release's documented schema-transition policy before replacing
-the image. D-142 uses baseline `mirawind-block-storage-v2`: initialize a new data root and
+the image. D-144 uses baseline `mirawind-block-storage-v3`: initialize a new data root and
 administrator, then reimport MinerU v2 ZIPs. Do not attach older databases or edit migration
 checksums. The owner authorized deleting this project's old `data/library`, `data/development`
 and `data/ir-v1` after stopping writers and disconnecting database clients; this is a one-time
@@ -206,6 +206,11 @@ verifying a database copy and injected rollback. All existing content, task rowi
 pointers were preserved. That one-time procedure is not an installed migration or compatibility
 path. Startup accepts only the current baseline. Remove stale worker health snapshots on this
 switch; the worker regenerates health schema v3.
+
+D-144 authorizes another clean switch for resource lifetimes and reference indexes: remove this
+project's old runtime root while stopped, initialize the v3 baseline and reimport source ZIPs.
+The earlier disposable transition experiments and old database copies are not retained. No
+runtime converter is installed, and old book identities or publication history are not inherited.
 
 ## 7. Monitoring
 
@@ -238,11 +243,14 @@ cookies, raw ZIP paths or private document content into incident tickets.
 
 Startup reconciliation inventories staging, database rows and immutable versions.
 Unreferenced complete version directories move to per-book quarantine; old quarantine
-entries are removed only after 24 hours. Idle maintenance repeats every 60 seconds. Replaced
-unpublished previews are reclaimed after 1 hour; old published artifacts after 24 hours. Retention
+entries are removed only after 24 hours. Full reconciliation runs while idle. Bounded reclamation
+runs every 60 seconds between jobs, even with a nonempty queue. Replaced unpublished previews
+expire 1 hour after retirement; older publications and corrupt artifacts after 24 hours. Retention
 preserves the active preview, current publication and newest verified published predecessor.
-Shared resources remain book-owned and are never deleted with an individual artifact.
-Failed path deletion remains visible for a later retry.
+Imported images and original ZIPs remain book-owned; uploaded covers expire after one hour without
+draft, retained-artifact or running-task use. Resources are never deleted with an individual artifact.
+Pending resource deletion blocks new references. Failures remain retryable; successful artifact
+deletion records `files_removed_at`, avoiding repeated filesystem work for historical tombstones.
 
 The current schema includes the rebuildable `book_version_presentations` projection,
 irreversible `books.deletion_requested_at` barrier and content-free `book_deletions`

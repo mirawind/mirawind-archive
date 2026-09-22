@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { SafeDiagnostic } from "@/domain/errors";
 
-export const draftPreparationVersion = "prepare-draft-v7";
+export const draftPreparationVersion = "prepare-draft-v8";
 export const preparationArtifactFilename = "prepared-draft.json";
 export interface PreparedResource {
   readonly id: string;
@@ -10,6 +10,8 @@ export interface PreparedResource {
   readonly sha256: string;
   readonly size: number;
   readonly media_type: string;
+  readonly width: number;
+  readonly height: number;
 }
 export interface PreparedDraftArtifact {
   readonly sourcePath: string;
@@ -62,6 +64,10 @@ export async function readPreparedDraftArtifact(
       !/^res_[A-Za-z0-9_-]{16,80}$/u.test(resource.id) ||
       !/^[a-f0-9]{64}$/u.test(resource.sha256) ||
       !Number.isSafeInteger(resource.size) ||
+      !Number.isSafeInteger(resource.width) ||
+      resource.width < 1 ||
+      !Number.isSafeInteger(resource.height) ||
+      resource.height < 1 ||
       resource.size < 0 ||
       !resource.path.startsWith("assets/")
     )

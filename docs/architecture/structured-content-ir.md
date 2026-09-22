@@ -61,5 +61,8 @@ normally. Large navigation shells can cost more to parse than fresh rendering. H
 page content and shared publishing inputs must match before reuse. No extra body cache is stored.
 
 Manifest v5 maps pages, blocks, navigation and shared resources. Marker v5 closes generated files
-and separately records shared files. Assets are never copied into each build. Published versions
+and separately records actual shared image dependencies, not the entire resource catalogue.
+Original ZIP downloads are independent of body construction. Assets are never copied into each build. Published versions
 remain immutable and current_version_id remains the sole reader pointer.
+
+D-144 defines catalogue retention and resource-reference indexes in [Resource Lifecycle](resource-lifecycle.md).

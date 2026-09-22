@@ -4,7 +4,7 @@ import { isSandboxedPreviewRead } from "../../../scripts/dev-preview-requests";
 
 describe("development preview fetch metadata", () => {
   const asset =
-    "/api/manage/books/1/preview/candidate_0123456789abcdef/assets/res_0123456789abcdef";
+    "/api/manage/books/1/preview/ver_0123456789abcdef/assets/res_0123456789abcdef";
   const request = (url: string, method = "GET") =>
     ({
       url,

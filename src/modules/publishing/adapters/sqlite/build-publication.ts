@@ -104,15 +104,15 @@ export class BuildPublicationRepository implements BuildPublicationPort {
       if (row.current_version_id !== null) {
         const changed = this.database
           .prepare(
-            "UPDATE book_versions SET state='superseded' WHERE id=? AND book_id=? AND state='published'",
+            "UPDATE book_versions SET state='superseded',retired_at=? WHERE id=? AND book_id=? AND state='published'",
           )
-          .run(row.current_version_id, row.book_id);
+          .run(input.nowMs, row.current_version_id, row.book_id);
         if (changed.changes !== 1)
           throw new Error("PUBLICATION_OLD_STATE_INVALID");
       }
       const promoted = this.database
         .prepare(
-          "UPDATE book_versions SET state='published',published_at=?,verified_at=? WHERE id=? AND book_id=? AND state='ready'",
+          "UPDATE book_versions SET state='published',published_at=?,verified_at=?,retired_at=NULL WHERE id=? AND book_id=? AND state='ready'",
         )
         .run(input.nowMs, input.nowMs, row.version_id, row.book_id);
       if (promoted.changes !== 1)

@@ -29,6 +29,8 @@ export async function prepareBookResources(
       ...resource,
       size: bytes.byteLength,
       sha256: createHash("sha256").update(bytes).digest("hex"),
+      width: image.width,
+      height: image.height,
     });
   }
   return resources;

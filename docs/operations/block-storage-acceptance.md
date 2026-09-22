@@ -1,5 +1,9 @@
 # Block Storage Acceptance
 
+Current resource lifecycle: D-144 supersedes the retention and local-runtime statements below.
+See [Resource Lifecycle Acceptance](resource-lifecycle-acceptance.md) for the v3 clean switch,
+dependency-only builds and current reclamation evidence. Earlier sections remain historical.
+
 D-143 follow-up: all blocks now share one scoped editing operation and `blocks[]` HTTP command;
 the former ordinary-root special case and whole-document editing fallback are removed. Current
 behavior and 2026-09-22 measurements are recorded in [Unified Block Editing](../architecture/block-editing.md).

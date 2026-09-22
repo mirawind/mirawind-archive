@@ -234,19 +234,24 @@ span，因此本文不对这些未测边界作耗时或内存归因。CPU 高于
 - 测量后 reference comparator 报告 SHA-256：
   `c93c8964bac92ebd4decdcd970d2dcde8d270ac84a2954c7455905075816103a`。
 
-单轮复现命令如下；输出目录必须是被忽略的本地目录：
+以下保留原测量方式；当前统一使用 `benchmark:build` 的 profiling 参数，reference 使用 v3。
+这些命令产生当前实现的测量，不能直接重现上文已归档的旧架构数值。输出目录必须被 Git 忽略：
 
 ```sh
 pnpm build
-pnpm benchmark:pipeline-profile \
+pnpm benchmark:build \
   --real-dir "$PWD/tests/fixtures/mineru/real" \
   --real-manifest real-fixtures.json \
+  --include-stress false \
   --profile-dir "$PWD/.cache/15-book-performance/profiles" \
   --output "$PWD/.cache/15-book-performance/results.json" \
   --repetitions 1
+pnpm fixtures:observe-references \
+  --real-dir "$PWD/tests/fixtures/mineru/real" \
+  --output "$PWD/.cache/15-book-performance/observed"
 pnpm fixtures:compare-references \
-  --reference-dir "$PWD/tests/fixtures/mineru/real/references-v2" \
-  --observed-dir "$PWD/tests/fixtures/mineru/real/observed-v2"
+  --reference-dir "$PWD/tests/fixtures/mineru/real/references-v3" \
+  --observed-dir "$PWD/.cache/15-book-performance/observed"
 ```
 
 ## 优化候选与实验顺序

@@ -107,6 +107,17 @@ pnpm fixtures:verify-real --dir "$PWD/tests/fixtures/mineru/real"
 MIRAWIND_REAL_FIXTURE_DIR="$PWD/tests/fixtures/mineru/real" pnpm test:e2e
 ```
 
+`scripts/` 保留当前构建、开发和验收所需工具：
+
+- 根目录：开发启动、预览请求处理、IR 类型生成、渲染资源准备、运行 schema 打包及样式检查。
+- `architecture/`：CI 使用的模块边界、导入和命名检查。
+- `fixtures/`：真实样本登记、独立内容真值准备与比较，以及测试 ZIP／压力书生成。
+- `benchmarks/`：构建、阅读、搜索、并发负载、书库及整套参考测量，`http.ts` 是共用统计工具。
+
+分段或 CPU 诊断直接使用 `benchmark:build` 的 `--profile-dir`／`--cpu-profile-dir`，
+需要只测真实书时显式传入 `--include-stress false`。旧 feature 008 的专项 A/B 配对工具链、
+前置绑定脚本和重复 profiling 入口已删除；现有性能回退容差与内容真值验收不变。
+
 ## 文档
 
 - [产品规格](docs/product/product-spec.md)

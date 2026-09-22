@@ -117,7 +117,7 @@ async function quarantineOrphanVersions(input: {
 }): Promise<readonly string[]> {
   const known = new Set(
     new VersionRepository(input.database)
-      .listAll()
+      .listStored()
       .map((version) => version.versionRelativePath),
   );
   const quarantined: string[] = [];
@@ -172,9 +172,10 @@ async function markMissingDatabaseVersions(input: {
   readonly database: Database.Database;
   readonly layout: StorageLayout;
   readonly repository: VersionRepository;
+  readonly nowMs: number;
 }): Promise<readonly string[]> {
   const corrupt: string[] = [];
-  for (const version of input.repository.listAll()) {
+  for (const version of input.repository.listStored()) {
     if (version.reclaimedAtMs !== null) continue;
     const active = input.database
       .prepare(
@@ -188,7 +189,7 @@ async function markMissingDatabaseVersions(input: {
       version.versionRelativePath !== expected ||
       !(await existsAsDirectory(resolve(input.layout.root, expected)))
     ) {
-      input.repository.markCorrupt(version.id);
+      input.repository.markCorrupt(version.id, input.nowMs);
       corrupt.push(version.id);
     }
   }
@@ -329,6 +330,7 @@ export async function reconcilePublishingStorage(input: {
   const corruptDatabaseVersions = await markMissingDatabaseVersions({
     database: input.database,
     layout: input.layout,
+    nowMs: input.nowMs,
     repository: new VersionRepository(input.database),
   });
   return Object.freeze({

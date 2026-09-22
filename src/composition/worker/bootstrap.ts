@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { recoverWorkerAttempts } from "./recover-attempts";
 import { WorkerHealthReporter } from "./health-reporter";
 import { runWorkerLoop } from "./loop";
-import { runWorkerMaintenance } from "./maintenance";
+import { runWorkerMaintenance, runIdleReconciliation } from "./maintenance";
 import { parseEnvironment } from "@/config/environment";
 import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
@@ -75,7 +75,8 @@ export async function runWorkerMain(): Promise<void> {
       drafts: new DraftRepository(database),
       imports: new ImportRepository(database),
       layout,
-      onIdle: () => runWorkerMaintenance({ database, layout }),
+      onMaintenance: () => runWorkerMaintenance({ database, layout }),
+      onIdle: () => runIdleReconciliation({ database, layout }),
       onAttemptObservation: (observation) =>
         healthReporter.recordAttempt(observation),
       onCheckpoint: (health, nowMs) =>

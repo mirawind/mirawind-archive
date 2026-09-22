@@ -6,16 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 import * as rendering from "@/modules/publishing/core/publication/render-document";
 import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
 import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
-import { JobRepository } from "@/modules/publishing/adapters/sqlite/jobs";
-import { ImportRepository } from "@/modules/publishing/adapters/sqlite/imports";
 import { VersionRepository } from "@/modules/publishing/adapters/sqlite/versions";
 import { saveDocument } from "@/modules/publishing/adapters/sqlite/save-document";
-import { BuildRegistrationRepository } from "@/modules/publishing/adapters/sqlite/build-registration";
 import { BuildPublicationRepository } from "@/modules/publishing/adapters/sqlite/build-publication";
 import { BookPresentationRepository } from "@/modules/catalog/adapters/sqlite/book-presentations";
-import { captureFrozenJobInput } from "@/composition/worker/capture-frozen-input";
-import { buildBookHandler } from "@/composition/worker-child/handlers/publishing";
-import { finalizeBuild } from "@/modules/publishing/application/commands/finalize-build";
 import { verifyVersionFully } from "@/composition/version-verification";
 import {
   reclaimRetainedStorage,
@@ -23,6 +17,7 @@ import {
 } from "@/modules/publishing/adapters/worker/reclaim";
 import { withMigratedTestDatabase } from "../../helpers/database";
 import { prepareIrBook } from "../../helpers/prepare-ir-book";
+import { buildSavedBook } from "../../helpers/build-book";
 import {
   mineruTitle,
   mineruParagraph,
@@ -61,41 +56,8 @@ describe("block storage publication", () => {
         ),
       );
       const documents = new DocumentRepository(database),
-        builds = new BuildRepository(database),
-        jobs = new JobRepository(database),
-        imports = new ImportRepository(database);
-      const build = async () => {
-        const job = jobs.claimNext({
-          leaseOwner: "test",
-          nowMs: Date.now() + 2000,
-        });
-        if (!job) throw new Error("BUILD_JOB_MISSING");
-        const command = await captureFrozenJobInput({
-          job,
-          builds: builds,
-          imports,
-          database,
-          layout,
-        });
-        if (command.kind !== "build_book") throw new Error("BUILD_JOB_INVALID");
-        const result = await buildBookHandler(command, {
-          root: layout.root,
-          signal: new AbortController().signal,
-          reportProgress() {},
-        });
-        if (!result.ok) throw new Error("BUILD_FAILED");
-        return finalizeBuild({
-          artifact: result.result,
-          command,
-          leaseOwner: "test",
-          nowMs: Date.now(),
-          registration: new BuildRegistrationRepository(
-            database,
-            layout,
-            new BookPresentationRepository(database),
-          ),
-        });
-      };
+        builds = new BuildRepository(database);
+      const build = () => buildSavedBook(database, layout);
       let initial = documents.read(fixture.book.id);
       saveDocument({
         bookId: fixture.book.id,
@@ -200,12 +162,12 @@ describe("block storage publication", () => {
           "utf8",
         ),
       );
-      expect(marker.shared_files).toHaveLength(2);
+      expect(marker.shared_files).toHaveLength(1);
       const sharedBytes = marker.shared_files.reduce(
         (sum: number, file: { size: number }) => sum + file.size,
         0,
       );
-      expect(sharedBytes).toBeGreaterThan(image.length);
+      expect(sharedBytes).toBe(image.length);
       for (const file of marker.files as { path: string }[])
         expect(
           file.path.startsWith("assets/") ||
@@ -243,6 +205,9 @@ describe("block storage publication", () => {
         },
       });
       const third = await build();
+      database
+        .prepare("UPDATE book_versions SET complete_at=1 WHERE id=?")
+        .run(third.versionId);
       expect(render).toHaveBeenCalledTimes(2);
       saveDocument({
         bookId: fixture.book.id,
@@ -260,6 +225,16 @@ describe("block storage publication", () => {
         },
       });
       const latest = await build();
+      expect(
+        (
+          await reclaimRetainedStorage({
+            database,
+            layout,
+            nowMs: Date.now(),
+            presentationRemover: new BookPresentationRepository(database),
+          })
+        ).reclaimedVersionIds,
+      ).toEqual([]);
       const reclaimed = await reclaimRetainedStorage({
         database,
         layout,

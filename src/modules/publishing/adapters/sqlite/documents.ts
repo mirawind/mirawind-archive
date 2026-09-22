@@ -12,6 +12,8 @@ import type {
   ListItem,
 } from "../../core/content/book-document.generated";
 import { contentEntries } from "../../core/content/content-tree";
+import { contentResourceIds } from "../../core/content/resource-references";
+import { ResourceRepository } from "./resources";
 import { parseDraftEdit } from "../../core/content/edit-book";
 import { prepareDraftEdit } from "../../core/content/prepare-edit";
 import { documentEditContext } from "./document-edit-context";
@@ -33,6 +35,7 @@ export interface DocumentRootRow {
   readonly type: ContentBlock["type"];
   readonly json: string;
   readonly nodes: readonly { readonly id: string; readonly kind: string }[];
+  readonly resourceIds: readonly string[];
 }
 export interface DocumentRows {
   readonly header: Omit<BookDocument, "blocks">;
@@ -43,6 +46,7 @@ export function documentRootRow(block: ContentBlock): DocumentRootRow {
     id: block.id,
     type: block.type,
     json: JSON.stringify(block),
+    resourceIds: contentResourceIds([block]),
     nodes: [...contentEntries([block])].map(({ node, kind }) => ({
       id: node.id,
       kind,
@@ -61,7 +65,10 @@ function conflict(): never {
 }
 
 export class DocumentRepository {
-  constructor(private readonly database: Database.Database) {}
+  private readonly resources: ResourceRepository;
+  constructor(private readonly database: Database.Database) {
+    this.resources = new ResourceRepository(database);
+  }
 
   header(bookId: number): Omit<BookDocument, "blocks"> {
     const row = this.database
@@ -72,7 +79,7 @@ export class DocumentRepository {
     if (!row) missing();
     const resources = this.database
       .prepare(
-        "SELECT id,storage_rel_path,media_type FROM book_resources WHERE book_id=? ORDER BY rowid",
+        "SELECT id,storage_rel_path,media_type FROM book_resources WHERE book_id=? AND deletion_requested_at IS NULL ORDER BY rowid",
       )
       .all(bookId) as {
       id: string;
@@ -178,9 +185,24 @@ export class DocumentRepository {
           .all(bookId) as string[];
         const resources = this.database
           .prepare(
-            "SELECT id,storage_rel_path AS path,size_bytes AS size,sha256,media_type FROM book_resources WHERE book_id=?",
+            `SELECT id,storage_rel_path AS path,size_bytes AS size,sha256,media_type FROM book_resources
+             WHERE book_id=@bookId AND deletion_requested_at IS NULL AND
+             (id=@coverId OR id IN (SELECT resource_id FROM book_block_resources WHERE book_id=@bookId)) ORDER BY rowid`,
           )
-          .all(bookId);
+          .all({
+            bookId,
+            coverId: book.metadata.cover_resource_id ?? null,
+          }) as {
+          id: string;
+          path: string;
+          size: number;
+          sha256: string;
+          media_type: string;
+        }[];
+        const used = new Set(resources.map((resource) => resource.id));
+        book.resources = book.resources.filter((resource) =>
+          used.has(resource.id),
+        );
         const originals = this.database
           .prepare(
             "SELECT id,storage_rel_path AS path,size_bytes AS size,sha256,media_type,original_name AS filename FROM original_files WHERE book_id=? AND import_id=?",
@@ -237,6 +259,7 @@ export class DocumentRepository {
     );
     for (const node of root.nodes)
       insert.run(bookId, node.id, root.id, node.kind);
+    this.resources.replaceRoot(bookId, root.id, root.resourceIds);
   }
 
   insert(input: BookDocument): void {
@@ -270,6 +293,8 @@ export class DocumentRepository {
         blockInsert.run(book.book_id, root.id, ordinal, root.type, root.json);
         for (const node of root.nodes)
           nodeInsert.run(book.book_id, node.id, root.id, node.kind);
+        if (root.resourceIds.length)
+          this.resources.replaceRoot(book.book_id, root.id, root.resourceIds);
       }
     });
   }
@@ -334,6 +359,11 @@ export class DocumentRepository {
       if (prior) return { updated_at: prior.updated_at };
       this.requireTimestamp(input.bookId, input.expectedUpdatedAt);
       if (prepared.changed) {
+        const coverIds = next.metadata.cover_resource_id
+          ? [next.metadata.cover_resource_id]
+          : [];
+        this.resources.requireAvailable(input.bookId, coverIds);
+        this.resources.touch(input.bookId, coverIds);
         for (const root of roots)
           this.writeRoot(input.bookId, root.row, root.ordinal);
         this.database

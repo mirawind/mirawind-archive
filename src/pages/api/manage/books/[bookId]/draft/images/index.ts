@@ -1,10 +1,6 @@
 import type { APIRoute } from "astro";
 
-import {
-  createPublishingArtifactServer,
-  createPublishingDraftServer,
-} from "@/composition/server/publishing-drafts";
-import { getRuntimeStorageLayout } from "@/composition/storage";
+import { createPublishingDraftServer } from "@/composition/server/publishing-drafts";
 import { SafeApplicationError } from "@/domain/errors";
 import { requireRuntimeAdministrator } from "@/http/authorization/runtime-admin";
 import { applyResponsePolicy } from "@/http/cache/policies";
@@ -30,40 +26,26 @@ export const GET: APIRoute = async ({ locals, params }) => {
   }
   const publishing = createPublishingDraftServer(database);
   const book = publishing.findBook(bookId);
-  const candidate = publishing.findCurrentBuild(bookId);
-  if (!book?.draftImportId || !candidate?.id || candidate.state !== "ready") {
+  if (!book?.draftImportId) {
     throw new SafeApplicationError(
       "NOT_FOUND",
       "The images were not found.",
       404,
     );
   }
-  const layout = await getRuntimeStorageLayout();
-  const view = publishing.readDraftView(bookId);
-  if (candidate.sourceUpdatedAt !== view.updated_at)
-    throw new SafeApplicationError(
-      "NOT_FOUND",
-      "The images were not found.",
-      404,
-    );
-  const artifacts = createPublishingArtifactServer(layout);
-  const images = await artifacts.listCandidateImages({
-    bookId,
-    versionId: candidate.id,
-    versionRelativePath: `books/${bookId}/builds/${candidate.id}`,
-  });
+  const images = publishing.listDraftImages(bookId);
   const headers = new Headers();
   applyResponsePolicy(headers, "private-api");
   return Response.json(
     {
       images: images.map((image) => ({
         height: image.height,
-        media_type: image.mediaType,
-        path: image.path,
-        resource_id: image.resourceId,
-        selected: view.metadata.cover_resource_id === image.resourceId,
-        size_bytes: image.sizeBytes,
-        url: `/api/manage/books/${bookId}/draft/images/${image.resourceId}`,
+        media_type: image.media_type,
+        path: image.storage_rel_path.slice(`books/${bookId}/`.length),
+        resource_id: image.resource_id,
+        selected: Boolean(image.selected),
+        size_bytes: image.size_bytes,
+        url: `/api/manage/books/${bookId}/draft/images/${image.resource_id}`,
         width: image.width,
       })),
     },

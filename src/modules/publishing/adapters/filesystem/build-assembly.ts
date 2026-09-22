@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { lstat, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { compileBook } from "../../core/publication/compile-book";
@@ -95,41 +94,10 @@ export async function assembleBuild(
     ) as { import_id: string; files: Readonly<Record<string, unknown>>[] };
     if (
       originalRecord.import_id !== input.importId ||
-      !Array.isArray(originalRecord.files) ||
-      originalRecord.files.length !== 1
+      !Array.isArray(originalRecord.files)
     )
       throw new Error("BUILD_ORIGINAL_CAPTURE_INVALID");
     const sharedFiles: { path: string; sha256: string; size: number }[] = [];
-    for (const original of originalRecord.files) {
-      input.signal?.throwIfAborted();
-      const relativePath = "originals/" + original.id;
-      if (original.path !== "books/" + input.bookId + "/" + relativePath)
-        throw new Error("BUILD_ORIGINAL_PATH_INVALID");
-      const originalPath = await resolveContainedPath(
-        input.resourceRoot,
-        relativePath,
-      );
-      const metadata = await lstat(originalPath);
-      if (
-        !metadata.isFile() ||
-        metadata.isSymbolicLink() ||
-        metadata.size !== original.size
-      )
-        throw new Error("BUILD_ORIGINAL_INVALID");
-      const hash = createHash("sha256");
-      let size = 0;
-      for await (const chunk of createReadStream(originalPath)) {
-        input.signal?.throwIfAborted();
-        size += chunk.byteLength;
-        if (size > Number(original.size))
-          throw new Error("BUILD_ORIGINAL_CHANGED");
-        hash.update(chunk);
-      }
-      const digest = hash.digest("hex");
-      if (size !== original.size || digest !== original.sha256)
-        throw new Error("BUILD_ORIGINAL_CHANGED");
-      sharedFiles.push({ path: relativePath, sha256: digest, size });
-    }
     const resources: ManifestResource[] = [];
     const resourceProof = JSON.parse(
       await readFile(

@@ -1,5 +1,9 @@
 # Tasks: Publishing Pipeline Performance
 
+Historical delivery record. The feature-specific paired benchmark runner and its dedicated tests
+have been retired during script cleanup. Paths below record the original implementation, not
+current entry points. Current build/profile and regression commands are documented in `quickstart.md`.
+
 **Input**: Design documents from `specs/008-publishing-pipeline-performance/`
 
 **Tests**: Add or update tests only for user-visible behavior, data integrity, security boundaries or

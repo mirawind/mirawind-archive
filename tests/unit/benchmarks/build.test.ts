@@ -9,7 +9,6 @@ import {
   parseBuildArguments,
   resolveBenchmarkFixtures,
 } from "../../../scripts/benchmarks/build.js";
-import { parsePipelineProfileArguments } from "../../../scripts/benchmarks/pipeline-profile.js";
 
 const roots: string[] = [];
 
@@ -38,9 +37,9 @@ function realFixture(id: string, value: string) {
   } as const;
 }
 
-describe("pipeline profile benchmark arguments", () => {
-  it("selects opaque fixtures, repetitions and no stress by default", () => {
-    const parsed = parsePipelineProfileArguments([
+describe("build benchmark arguments", () => {
+  it("selects fixtures, repetitions and profiling without synthetic stress", () => {
+    const parsed = parseBuildArguments([
       "--real-dir",
       "/tmp/real-fixtures",
       "--profile-dir",
@@ -51,6 +50,8 @@ describe("pipeline profile benchmark arguments", () => {
       "real-mineru-abcdef123456,real-mineru-fedcba654321",
       "--repetitions",
       "3",
+      "--include-stress",
+      "false",
     ]);
     expect(parsed).toMatchObject({
       fixtureIds: ["real-mineru-abcdef123456", "real-mineru-fedcba654321"],
@@ -101,20 +102,12 @@ describe("pipeline profile benchmark arguments", () => {
     ]);
   });
 
-  it("rejects duplicate fixture IDs and missing output roots", () => {
+  it("rejects duplicate fixture IDs", () => {
     expect(() =>
       parseBuildArguments([
         "--fixture-ids",
         "real-mineru-abcdef123456,real-mineru-abcdef123456",
       ]),
     ).toThrow("fixture IDs");
-    expect(() =>
-      parsePipelineProfileArguments([
-        "--real-dir",
-        "/tmp/real-fixtures",
-        "--profile-dir",
-        "/tmp/profiles",
-      ]),
-    ).toThrow("PIPELINE_PROFILE_OUTPUT_REQUIRED");
   });
 });

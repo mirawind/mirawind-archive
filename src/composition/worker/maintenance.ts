@@ -2,7 +2,10 @@ import type Database from "better-sqlite3";
 
 import { reconcileStorage } from "../storage-reconciliation";
 import { BookPresentationRepository } from "@/modules/catalog/adapters/sqlite/book-presentations";
-import { reclaimRetainedStorage } from "@/modules/publishing/adapters/worker/reclaim";
+import {
+  reclaimRetainedStorage,
+  reclaimQuarantine,
+} from "@/modules/publishing/adapters/worker/reclaim";
 import { operationalMetrics } from "@/observability/metrics";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 
@@ -20,7 +23,7 @@ async function runStep(
       name.toUpperCase().replaceAll(".", "_"),
     );
     process.stderr.write(
-      `Mirawind worker ${name} failed; retrying next start\n`,
+      `Mirawind worker ${name} failed; retrying next maintenance\n`,
     );
   } finally {
     operationalMetrics.recordPhase(name, Date.now() - startedAtMs);
@@ -28,6 +31,21 @@ async function runStep(
 }
 
 export async function runWorkerMaintenance(input: {
+  readonly database: Database.Database;
+  readonly layout: StorageLayout;
+}): Promise<void> {
+  await runStep("maintenance.reclaim", async () => {
+    const outcome = await reclaimRetainedStorage({
+      ...input,
+      nowMs: Date.now(),
+      presentationRemover: new BookPresentationRepository(input.database),
+    });
+    if (outcome.failedPaths.length > 0)
+      throw new Error("RECLAIM_CLEANUP_INCOMPLETE");
+  });
+}
+
+export async function runIdleReconciliation(input: {
   readonly database: Database.Database;
   readonly layout: StorageLayout;
 }): Promise<void> {
@@ -47,12 +65,11 @@ export async function runWorkerMaintenance(input: {
     }
   });
   await runStep("maintenance.reclaim", async () => {
-    const outcome = await reclaimRetainedStorage({
-      ...input,
+    const outcome = await reclaimQuarantine({
+      layout: input.layout,
       nowMs: Date.now(),
-      presentationRemover: new BookPresentationRepository(input.database),
     });
-    if (outcome.failedPaths.length > 0) {
+    if (outcome.failed.length > 0) {
       throw new Error("RECLAIM_CLEANUP_INCOMPLETE");
     }
   });

@@ -55,9 +55,11 @@ Save recovery belongs to SQLite, not cross-file receipts. Import and build final
 respect filesystem/database crash boundaries. Orphans are isolated; recovery never publishes
 an artifact without a prior publication action.
 
-Idle maintenance runs periodically, preserving current preview/publication and the latest verified
+Bounded maintenance runs between jobs, preserving current preview/publication and the latest verified
 published predecessor. Replaced unpublished builds and older published artifacts are reclaimed
-after their grace periods. Shared assets remain retained while registered/referenced.
+after retirement-based grace periods. Imported assets remain book-owned; uploaded resources are
+reclaimed separately when neither draft, retained artifact nor running task needs them. Full
+orphan reconciliation runs while idle. See [Resource Lifecycle](resource-lifecycle.md).
 
 ## HTTP Boundaries
 

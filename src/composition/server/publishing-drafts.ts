@@ -8,6 +8,7 @@ import { DraftArtifactReader } from "@/modules/publishing/adapters/filesystem/dr
 import { uploadDraftCover } from "@/modules/publishing/adapters/filesystem/draft-cover";
 import { BuildRepository } from "@/modules/publishing/adapters/sqlite/builds";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
+import { ResourceRepository } from "@/modules/publishing/adapters/sqlite/resources";
 import type { StorageLayout } from "@/platform/filesystem/storage-layout";
 export function createPublishingDraftServer(database: Database.Database) {
   const drafts = new DraftRepository(database),
@@ -21,6 +22,10 @@ export function createPublishingDraftServer(database: Database.Database) {
     readDraftView: documents.view.bind(documents),
     readDraftTimestamp: documents.timestamp.bind(documents),
     getDraftBlock: documents.block.bind(documents),
+    listDraftImages: (bookId: number) =>
+      new ResourceRepository(database).listImages(bookId),
+    findDraftImage: (bookId: number, resourceId: string) =>
+      new ResourceRepository(database).listImages(bookId, resourceId)[0],
   });
 }
 export function createPublishingArtifactServer(layout: StorageLayout) {

@@ -1,8 +1,8 @@
 CREATE TABLE database_baseline (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  identity TEXT NOT NULL UNIQUE CHECK (identity = 'mirawind-block-storage-v2')
+  identity TEXT NOT NULL UNIQUE CHECK (identity = 'mirawind-block-storage-v3')
 ) STRICT;
-INSERT INTO database_baseline (id, identity) VALUES (1, 'mirawind-block-storage-v2');
+INSERT INTO database_baseline (id, identity) VALUES (1, 'mirawind-block-storage-v3');
 
 CREATE TABLE installation (
   id INTEGER PRIMARY KEY CHECK (id = 1), admin_user_id TEXT UNIQUE,
@@ -74,8 +74,19 @@ CREATE TABLE book_resources (
   size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 0 AND 2147483648),
   sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
   created_at INTEGER NOT NULL,
+  retention TEXT NOT NULL DEFAULT 'book' CHECK (retention IN ('book','referenced')),
+  width INTEGER CHECK (width > 0), height INTEGER CHECK (height > 0),
+  unreferenced_at INTEGER, deletion_requested_at INTEGER,
+  cleanup_attempted_at INTEGER,
   UNIQUE(book_id,id)
 ) STRICT;
+CREATE TABLE book_block_resources (
+  book_id INTEGER NOT NULL, root_id TEXT NOT NULL, resource_id TEXT NOT NULL,
+  PRIMARY KEY(book_id,root_id,resource_id),
+  FOREIGN KEY(book_id,root_id) REFERENCES book_blocks(book_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(book_id,resource_id) REFERENCES book_resources(book_id,id) ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+CREATE INDEX block_resources_resource ON book_block_resources(book_id,resource_id);
 CREATE TABLE original_files (
   id TEXT PRIMARY KEY CHECK (id GLOB 'file_*'),
   book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE RESTRICT,
@@ -128,9 +139,18 @@ CREATE TABLE book_versions (
   blocking_diagnostic_count INTEGER NOT NULL CHECK (blocking_diagnostic_count BETWEEN 0 AND 10000),
   complete_at INTEGER NOT NULL, published_at INTEGER, verified_at INTEGER,
   reclaimed_at INTEGER CHECK (reclaimed_at IS NULL OR reclaimed_at >= 0),
+  retired_at INTEGER, files_removed_at INTEGER,
+  cleanup_attempted_at INTEGER,
   created_by_job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE RESTRICT,
   UNIQUE(book_id,id)
 ) STRICT;
+CREATE TABLE book_version_resources (
+  book_id INTEGER NOT NULL, version_id TEXT NOT NULL, resource_id TEXT NOT NULL,
+  PRIMARY KEY(version_id,resource_id),
+  FOREIGN KEY(book_id,version_id) REFERENCES book_versions(book_id,id) ON DELETE CASCADE,
+  FOREIGN KEY(book_id,resource_id) REFERENCES book_resources(book_id,id) ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+CREATE INDEX version_resources_resource ON book_version_resources(book_id,resource_id);
 CREATE TABLE search_short_fields (
   book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
   version_id TEXT NOT NULL REFERENCES book_versions(id) ON DELETE CASCADE,
@@ -155,6 +175,8 @@ CREATE UNIQUE INDEX one_ready_version_per_book ON book_versions(book_id) WHERE s
 CREATE INDEX builds_book_source ON book_versions(book_id,source_updated_at);
 CREATE UNIQUE INDEX one_queued_build_per_book ON jobs(book_id) WHERE kind='build_book' AND state='queued';
 CREATE INDEX book_resources_book ON book_resources(book_id,created_at);
+CREATE INDEX resources_cleanup ON book_resources(cleanup_attempted_at) WHERE retention='referenced';
+CREATE INDEX versions_cleanup ON book_versions(cleanup_attempted_at) WHERE files_removed_at IS NULL;
 CREATE INDEX imports_state_expiry ON imports(state,expires_at);
 CREATE INDEX book_versions_book_state ON book_versions(book_id,state,complete_at);
 CREATE INDEX jobs_claim_order ON jobs(state,created_at,id);

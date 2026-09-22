@@ -89,9 +89,11 @@ export class VersionRepository {
     return Object.freeze(rows.map(mapVersion));
   }
 
-  listAll(): readonly BookVersionRecord[] {
+  listStored(): readonly BookVersionRecord[] {
     const rows = this.database
-      .prepare("SELECT * FROM book_versions ORDER BY book_id, complete_at, id")
+      .prepare(
+        "SELECT * FROM book_versions WHERE files_removed_at IS NULL ORDER BY book_id, complete_at, id",
+      )
       .all() as VersionRow[];
     return Object.freeze(rows.map(mapVersion));
   }
@@ -112,13 +114,13 @@ export class VersionRepository {
     return Object.freeze(rows.map(mapVersion));
   }
 
-  markCorrupt(versionId: string): BookVersionRecord {
+  markCorrupt(versionId: string, nowMs = Date.now()): BookVersionRecord {
     const changed = this.database
       .prepare(
-        `UPDATE book_versions SET state = 'corrupt'
+        `UPDATE book_versions SET state = 'corrupt', retired_at = ?
          WHERE id = ? AND state <> 'corrupt'`,
       )
-      .run(versionId);
+      .run(nowMs, versionId);
     if (changed.changes > 1) throw new Error("VERSION_CORRUPT_UPDATE_INVALID");
     return this.require(versionId);
   }
@@ -142,7 +144,7 @@ export class VersionRepository {
     const changed = this.database
       .prepare(
         `UPDATE book_versions
-         SET state = 'published', verified_at = ?
+         SET state = 'published', verified_at = ?, retired_at = NULL
          WHERE id = ? AND book_id = ? AND state = 'superseded'`,
       )
       .run(input.nowMs, input.versionId, input.bookId);

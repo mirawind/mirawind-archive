@@ -4,6 +4,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -83,8 +84,6 @@ async function writeCandidateInput(
   dataRoot: TemporaryDataRoot,
   command: Omit<BuildBookCommand, "documentSha256">,
   options: {
-    readonly originalContents?: string;
-    readonly originalSha256?: string;
     readonly resource?: {
       readonly contents: Uint8Array;
       readonly filename: string;
@@ -122,7 +121,7 @@ async function writeCandidateInput(
     "originals",
     originalId,
   );
-  const originalContents = options.originalContents ?? "original ZIP";
+  const originalContents = "original ZIP";
   const originalFiles = [
     {
       filename: "original.zip",
@@ -130,7 +129,7 @@ async function writeCandidateInput(
       media_type: "application/zip",
       path: `books/${command.bookId}/originals/${originalId}`,
       role: "mineru_zip",
-      sha256: options.originalSha256 ?? sha256(originalContents),
+      sha256: sha256(originalContents),
       size: Buffer.byteLength(originalContents),
     },
   ];
@@ -390,7 +389,7 @@ describe("isolated candidate child builder", () => {
     }
   });
 
-  it("rejects a copied original that does not match its frozen digest", async () => {
+  it("builds readable body artifacts independently of original attachment bytes", async () => {
     const dataRoot = await createTemporaryDataRoot(
       "candidate-original-integrity",
     );
@@ -398,30 +397,25 @@ describe("isolated candidate child builder", () => {
       const command = await writeCandidateInput(
         dataRoot,
         commandFor("original_integrity_0001"),
-        {
-          originalContents: "not the registered original",
-          originalSha256: "f".repeat(64),
-        },
       );
-
-      await expect(
-        buildBookVersion({
-          command,
-          createdAtMs,
-          layout: dataRoot.layout,
-          preparationDiagnostics: [],
-        }),
-      ).rejects.toThrow("BUILD_ORIGINAL_CHANGED");
-      await expect(
-        access(
-          resolve(
-            dataRoot.layout.bookDirectory,
-            String(bookId),
-            "builds",
-            command.versionId,
-          ),
-        ),
-      ).rejects.toMatchObject({ code: "ENOENT" });
+      await rm(
+        resolve(dataRoot.layout.bookDirectory, String(bookId), "originals"),
+        { recursive: true },
+      );
+      const result = await buildBookVersion({
+        command,
+        createdAtMs,
+        layout: dataRoot.layout,
+        preparationDiagnostics: [],
+      });
+      const directory = resolve(dataRoot.path, result.artifactRootRelativePath);
+      const marker = JSON.parse(
+        await readFile(resolve(directory, "version.json"), "utf8"),
+      );
+      expect(marker.shared_files).toEqual([]);
+      expect(
+        await readFile(resolve(directory, "published/pages/1.html"), "utf8"),
+      ).toContain("First chapter");
     } finally {
       await dataRoot.cleanup();
     }

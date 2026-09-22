@@ -38,6 +38,7 @@ export async function runWorkerLoop(input: {
   readonly imports: ImportRepository;
   readonly layout: StorageLayout;
   readonly onIdle?: () => Promise<void>;
+  readonly onMaintenance?: () => Promise<void>;
   readonly onAttemptObservation?: (observation: AttemptObservation) => void;
   readonly onCheckpoint?: (health: WorkerStorageHealth, nowMs: number) => void;
   readonly onQueueObservation?: (observation: QueueObservation) => void;
@@ -47,6 +48,7 @@ export async function runWorkerLoop(input: {
   readonly workerId: string;
 }): Promise<void> {
   let nextIdleMaintenanceAt = 0;
+  let nextMaintenanceAt = 0;
   while (!input.shutdownSignal.aborted) {
     const loopNowMs = Date.now();
     await recoverWorkerAttempts({
@@ -58,6 +60,11 @@ export async function runWorkerLoop(input: {
     });
     const checkpoint = await input.scheduler.checkpointIfDue(loopNowMs);
     if (checkpoint) input.onCheckpoint?.(checkpoint, loopNowMs);
+    if (input.onMaintenance && loopNowMs >= nextMaintenanceAt) {
+      await input.onMaintenance();
+      nextMaintenanceAt = Date.now() + 60_000;
+      if (input.shutdownSignal.aborted) break;
+    }
     input.onQueueObservation?.(input.repository.observeQueue(loopNowMs));
     const job = input.repository.claimNext({
       leaseOwner: input.workerId,

@@ -1,13 +1,14 @@
 # Block Storage Implementation
 
-Authority: constitution 5.1.0 and D-141 through D-143. This supersedes the mutable-file and independent
+Authority: constitution 5.1.0 and D-141 through D-144. This supersedes the mutable-file and independent
 candidate parts of `structured-content-ir.md`. Import trust follows D-140.
 
 SQLite owns the document header and ordered top-level IR blocks. Nested identities belong to
 their root record. IR v1 remains the semantic schema. No editable JSON file, NDJSON view,
 independent candidate table or save worker is retained.
 
-D-142 uses database baseline `mirawind-block-storage-v2`, removing the retired import-review
+D-144 uses database baseline `mirawind-block-storage-v3` with resource lifetimes and reference indexes.
+D-142 removed the retired import-review
 failure category. Job error classes are defined once in Publishing: infrastructure, content,
 validation, timeout and canceled. Normal content budget failures are content errors. Worker IPC v8
 and health schema v3 use the same definitions; old health snapshots are discarded and regenerated.
@@ -99,8 +100,11 @@ replaces them. Corruption is isolated as `corrupt`. Publication verifies the exa
 current draft time, then atomically advances the single pointer. Old readers stay on the previous
 immutable publication while edits and builds proceed. Discarded previews expire after 1 hour;
 older publications after 24 hours, retaining the current and latest verified published predecessor.
-Reclamation marks a tombstone before deleting files and retries failed deletions. It never removes
-shared resources along with an artifact.
+Retention starts at retirement, not creation/publication. Reclamation marks a tombstone before
+deleting files and records physical completion so old tombstones do not trigger more deletion.
+It never removes shared resources along with an artifact. Between-job batches reclaim unused
+uploaded resources separately, protecting source images, retained artifacts and running tasks.
+See [Resource Lifecycle](resource-lifecycle.md) for catalogue, dependency and cleanup boundaries.
 
 ## Inspection
 

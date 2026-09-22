@@ -94,7 +94,7 @@ export async function finalizePreparedDraft(input: {
     }
     if (!document) throw new Error("IMPORT_DOCUMENT_MISSING");
     const insert = input.database.prepare(
-      "INSERT INTO book_resources(id,book_id,storage_rel_path,media_type,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?)",
+      "INSERT INTO book_resources(id,book_id,storage_rel_path,media_type,size_bytes,sha256,created_at,width,height) VALUES (?,?,?,?,?,?,?,?,?)",
     );
     for (const resource of artifact.resources)
       insert.run(
@@ -107,6 +107,8 @@ export async function finalizePreparedDraft(input: {
         resource.size,
         resource.sha256,
         input.nowMs,
+        resource.width,
+        resource.height,
       );
     input.database
       .prepare(

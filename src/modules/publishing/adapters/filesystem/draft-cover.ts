@@ -46,7 +46,7 @@ export async function uploadDraftCover(input: {
       documents.requireTimestamp(input.bookId, input.expectedUpdatedAt);
       input.database
         .prepare(
-          "INSERT INTO book_resources(id,book_id,storage_rel_path,media_type,size_bytes,sha256,created_at) VALUES (?,?,?,?,?,?,?)",
+          "INSERT INTO book_resources(id,book_id,storage_rel_path,media_type,size_bytes,sha256,created_at,retention,width,height) VALUES (?,?,?,?,?,?,?,'referenced',?,?)",
         )
         .run(
           id,
@@ -56,6 +56,8 @@ export async function uploadDraftCover(input: {
           input.bytes.byteLength,
           createHash("sha256").update(input.bytes).digest("hex"),
           input.nowMs,
+          image.width,
+          image.height,
         );
       return {
         ...saveDocument({

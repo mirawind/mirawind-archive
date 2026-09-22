@@ -301,11 +301,11 @@ export async function verifyAndRecoverCurrentVersions(input: {
         replacement = candidate;
         break;
       }
-      versions.markCorrupt(candidate.id);
+      versions.markCorrupt(candidate.id, input.nowMs);
     }
 
     withImmediateTransaction(input.database, () => {
-      if (current) versions.markCorrupt(current.id);
+      if (current) versions.markCorrupt(current.id, input.nowMs);
       if (replacement) {
         versions.promoteRecoveredVersion({
           bookId: book.bookId,

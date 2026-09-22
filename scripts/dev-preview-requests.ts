@@ -7,7 +7,7 @@ export function isSandboxedPreviewRead(request: IncomingMessage): boolean {
   const url = new URL(request.url ?? "/", "http://localhost");
   if (url.pathname.startsWith("/reader-assets/")) return true;
   return (
-    /^\/api\/manage\/books\/[1-9][0-9]*\/preview\/candidate_[A-Za-z0-9_-]{16,80}\/assets\/res_[A-Za-z0-9_-]{16,80}$/u.test(
+    /^\/api\/manage\/books\/[1-9][0-9]*\/preview\/ver_[A-Za-z0-9_-]{16,80}\/assets\/res_[A-Za-z0-9_-]{16,80}$/u.test(
       url.pathname,
     ) && Boolean(url.searchParams.get("authorization"))
   );

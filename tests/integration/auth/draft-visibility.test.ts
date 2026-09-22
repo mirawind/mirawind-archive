@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { resolve } from "node:path";
+import sharp from "sharp";
+import { createHash } from "node:crypto";
+import { atomicWriteFile } from "@/platform/filesystem/atomic-file";
+import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
+import { smallBook } from "../../helpers/ir-book";
 
 import { closeRuntimeAuthForTests } from "@/composition/auth";
 import { DraftRepository } from "@/modules/publishing/adapters/sqlite/drafts";
@@ -84,6 +90,32 @@ describe("draft resource access", () => {
         uploadSizeBytes: 1,
       });
       importedId = imported.id;
+      new DocumentRepository(migrated.database).insert(smallBook(bookId));
+      migrated.database
+        .prepare("UPDATE books SET draft_import_id=? WHERE id=?")
+        .run(importedId, bookId);
+      const imageId = "res_0123456789abcdefghij";
+      const imageBytes = await sharp({
+        create: { width: 2, height: 2, channels: 3, background: "white" },
+      })
+        .png()
+        .toBuffer();
+      const imagePath = `books/${bookId}/assets/${imageId}.png`;
+      await atomicWriteFile(resolve(dataRoot.path, imagePath), imageBytes, {
+        mode: 0o400,
+      });
+      migrated.database
+        .prepare(
+          `INSERT INTO book_resources(id,book_id,storage_rel_path,media_type,size_bytes,sha256,created_at,width,height)
+        VALUES (?,?,?,'image/png',?,?,1,2,2)`,
+        )
+        .run(
+          imageId,
+          bookId,
+          imagePath,
+          imageBytes.length,
+          createHash("sha256").update(imageBytes).digest("hex"),
+        );
       jobId = new JobRepository(migrated.database).create({
         importId: imported.id,
         kind: "analyze_import",
@@ -216,6 +248,24 @@ describe("draft resource access", () => {
         locals: { session },
         params: { jobId },
       } as never)) as Response;
+      const catalogue = await getDraftImages({
+        locals: { session },
+        params: { bookId: String(bookId) },
+      } as never);
+      expect(await catalogue.json()).toMatchObject({
+        images: [
+          { resource_id: imageId, selected: false, width: 2, height: 2 },
+        ],
+      });
+      expect(catalogue.headers.get("cache-control")).toBe("private, no-store");
+      const imageResponse = await getDraftImage({
+        locals: { session },
+        params: { bookId: String(bookId), resourceId: imageId },
+      } as never);
+      expect(Buffer.from(await imageResponse.arrayBuffer())).toEqual(
+        imageBytes,
+      );
+      expect(imageResponse.headers.get("x-robots-tag")).toContain("noindex");
       expect(jobResponse.status).toBe(200);
       expect(jobResponse.headers.get("cache-control")).toBe(
         "private, no-store",
@@ -249,7 +299,7 @@ describe("draft resource access", () => {
         import_id: importedId,
         preview: {
           source_updated_at: null,
-          state: "unavailable",
+          state: "building",
           url: null,
         },
       });

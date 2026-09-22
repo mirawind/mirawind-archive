@@ -8,11 +8,15 @@ import { BookPresentationRepository } from "@/modules/catalog/adapters/sqlite/bo
 import { VersionRepository } from "@/modules/publishing/adapters/sqlite/versions";
 import {
   reclaimRetainedStorage,
+  reclaimQuarantine,
   versionRetentionGraceMs,
 } from "@/modules/publishing/adapters/worker/reclaim";
 
 import { createTemporaryDataRoot } from "../../helpers/data-root.js";
-import { openMigratedTestDatabase } from "../../helpers/database.js";
+import {
+  openMigratedTestDatabase,
+  withMigratedTestDatabase,
+} from "../../helpers/database.js";
 import {
   publishReadyCandidateForTest,
   publicationTestVersionId,
@@ -25,6 +29,51 @@ const oldId = "ver_retention_old_00000000001";
 const failedCleanupId = "ver_retention_cleanup_000001";
 
 describe("published version and orphan retention", () => {
+  it("keeps corrupt current artifacts and starts their grace period at corruption", () =>
+    withMigratedTestDatabase(async ({ database }, { layout }) => {
+      const fixture = setupPublicationFixture(database);
+      await publishReadyCandidateForTest({
+        bookId: fixture.book.id,
+        database,
+        nowMs: 300,
+      });
+      const versions = new VersionRepository(database);
+      const retiredAt = versionRetentionGraceMs * 2;
+      versions.markCorrupt(publicationTestVersionId, retiredAt);
+      const collect = (nowMs: number) =>
+        reclaimRetainedStorage({
+          database,
+          layout,
+          nowMs,
+          presentationRemover: new BookPresentationRepository(database),
+        });
+      expect(
+        (await collect(retiredAt + versionRetentionGraceMs))
+          .reclaimedVersionIds,
+      ).toEqual([]);
+      database
+        .prepare("UPDATE books SET current_version_id=NULL WHERE id=?")
+        .run(fixture.book.id);
+      expect(
+        (await collect(retiredAt + versionRetentionGraceMs - 1))
+          .reclaimedVersionIds,
+      ).toEqual([]);
+      expect(
+        (await collect(retiredAt + versionRetentionGraceMs))
+          .reclaimedVersionIds,
+      ).toEqual([publicationTestVersionId]);
+      const deleted: string[] = [];
+      await reclaimRetainedStorage({
+        database,
+        layout,
+        nowMs: retiredAt + versionRetentionGraceMs + 1,
+        presentationRemover: new BookPresentationRepository(database),
+        removePath: async (path) => {
+          deleted.push(path);
+        },
+      });
+      expect(deleted).toEqual([]);
+    }));
   it("preserves current/previous, tombstones older versions after 24 hours and retries file cleanup", async () => {
     const root = await createTemporaryDataRoot("retention");
     const migrated = await openMigratedTestDatabase(root);
@@ -108,6 +157,11 @@ describe("published version and orphan retention", () => {
         jobIds[2]?.[1],
       );
       const presentations = new BookPresentationRepository(migrated.database);
+      migrated.database
+        .prepare(
+          "UPDATE book_versions SET retired_at=published_at WHERE state='superseded'",
+        )
+        .run();
       for (const versionId of [oldId, previousId, failedCleanupId]) {
         presentations.insert(presentationForTest(fixture.book.id, versionId));
       }
@@ -163,7 +217,11 @@ describe("published version and orphan retention", () => {
       });
       expect(first.reclaimedVersionIds).toEqual([failedCleanupId, oldId]);
       expect(first.failedPaths).toEqual([versionPath(failedCleanupId)]);
-      expect(first.removedQuarantinePaths).toEqual([
+      const quarantineResult = await reclaimQuarantine({
+        layout: root.layout,
+        nowMs,
+      });
+      expect(quarantineResult.removed).toEqual([
         `books/${fixture.book.id}/quarantine/old-orphan.1`,
       ]);
       const versions = new VersionRepository(migrated.database);
