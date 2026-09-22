@@ -31,16 +31,23 @@ describe("IR management HTTP contract", () => {
     );
     const edit = {
       expected_updated_at: timestamp,
-      changes: [
+      blocks: [
         {
           block_id: "blk_000000000000000000000001",
+          markdown: "Heading *edit*",
+          level: 1,
           exclude_from_numbering: true,
         },
+        {
+          block_id: "blk_000000000000000000000002",
+          markdown: "Paragraph **edit**",
+        },
       ],
+      metadata: { title: "Updated book" },
     };
     expect(validate(edit)).toBe(true);
     for (const invalid of [
-      { changes: edit.changes },
+      { blocks: edit.blocks },
       { ...edit, expected_updated_at: "1000" },
       { ...edit, expected_updated_at: -1 },
       { ...edit, unknown: true },

@@ -1,5 +1,10 @@
 # Block Storage Acceptance
 
+D-143 follow-up: all blocks now share one scoped editing operation and `blocks[]` HTTP command;
+the former ordinary-root special case and whole-document editing fallback are removed. Current
+behavior and 2026-09-22 measurements are recorded in [Unified Block Editing](../architecture/block-editing.md).
+This keeps the D-142 database baseline and all existing book/publication data unchanged.
+
 Current follow-up: D-142 removes the obsolete import-review failure category. The local database
 now uses `mirawind-block-storage-v2`; IR and publication artifacts retain their existing formats.
 The original D-141 measurement and import evidence below remains applicable to the body pipeline.

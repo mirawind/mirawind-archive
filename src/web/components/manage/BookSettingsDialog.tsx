@@ -122,7 +122,6 @@ export function BookSettingsDialog(props: {
           body: JSON.stringify({
             expected_updated_at: expectedUpdatedAt,
             alias: alias.trim() || null,
-            changes: [],
             metadata: {
               authors: normalizedAuthors.length > 0 ? normalizedAuthors : null,
               cover_resource_id: coverId,

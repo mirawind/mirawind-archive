@@ -1,6 +1,6 @@
 # Block Storage Implementation
 
-Authority: constitution 5.1.0, D-141 and D-142. This supersedes the mutable-file and independent
+Authority: constitution 5.1.0 and D-141 through D-143. This supersedes the mutable-file and independent
 candidate parts of `structured-content-ir.md`. Import trust follows D-140.
 
 SQLite owns the document header and ordered top-level IR blocks. Nested identities belong to
@@ -70,9 +70,12 @@ until PATCH returns 200. The browser waits 600 ms of inactivity, serializes save
 typed after a submission for the next save. Validation errors and 412 conflicts retain local text;
 the user can retry or explicitly discard. Closing a dirty tab triggers the browser leave warning.
 
-For an ordinary block edit, Publishing reads only its root, parses editor syntax and validates
-local shape, references and boundaries before opening a write transaction. Structural edits
-validate ordered document context. The short IMMEDIATE transaction checks the expected time,
+All block types use the same batch edit path, including headings and nested nodes. Publishing
+reads owning roots, parses editor syntax and checks local shape, references and boundaries.
+Only changes to heading structure request the ordered heading-bearing roots; unrelated body
+roots are not loaded. Metadata and numbering-mode edits do not load body roots. There is no
+whole-book save fallback. See [Unified Block Editing](block-editing.md). The short IMMEDIATE
+transaction checks the expected time,
 writes changed rows, records the receipt and coalesces a build job. Failure rolls everything back.
 A no-op returns the same time; a changed save takes `max(now, previous + 1)`. Network retries with
 the same request identity return the prior result; reusing an identity for another request fails.

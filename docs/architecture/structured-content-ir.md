@@ -44,9 +44,10 @@ Fresh uploads create fresh books; there is no old-library conversion or source-f
 
 ## Editing And Rendering
 
-The existing editor uses local Markdown fragments as input syntax only. Ordinary non-heading
-root edits load only the owning block and validate its typed structure and references through
-indexes. Structural edits validate the ordered book context. SQLite atomically commits changed
+The existing editors use local Markdown fragments as input syntax only. D-143 unifies all block
+edits, including headings, under one batch command and one scoped core operation. Edits load owning
+roots and indexed references; heading-structure changes additionally query heading-bearing roots,
+not the entire body. Metadata and numbering mode need no body roots. SQLite atomically commits changed
 rows and max(now, previous + 1); no-op saves keep the time. Permission changes do not change it.
 
 The supervisor captures stored root JSON in a consistent database read snapshot without expanding

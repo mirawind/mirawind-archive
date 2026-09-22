@@ -72,7 +72,7 @@ function editorInlines(
 
 export function parseInlineEditorText(
   value: string,
-  book: Pick<BookDocument, "resources" | "blocks">,
+  book: Pick<BookDocument, "resources">,
 ): InlineNode[] {
   const tree = processor.parse(value) as unknown as TransientDocumentNode;
   if (
@@ -85,7 +85,7 @@ export function parseInlineEditorText(
 
 function inlineFromEditor(
   nodes: readonly TransientDocumentNode[],
-  book: Pick<BookDocument, "resources" | "blocks">,
+  book: Pick<BookDocument, "resources">,
 ): InlineNode[] {
   if (nodes.some((node) => node.type === "html"))
     return parseInlineHtml(
@@ -150,11 +150,13 @@ function inlineFromEditor(
 
 export function parseBlockEditorText(
   value: string,
-  book: BookDocument,
+  book: Pick<BookDocument, "resources">,
   previous: ContentBlock,
 ): ContentBlock {
   if (Buffer.byteLength(value) > 4 * 1024 * 1024) unsupported();
   if (value === blockEditorText(previous, book)) return previous;
+  if (previous.type === "paragraph" && !value.trim())
+    return { ...previous, content: [] };
   if (previous.type === "table") {
     return retainEditedBlock(previous, {
       ...previous,
@@ -174,6 +176,16 @@ export function parseBlockEditorText(
   function convert(node: TransientDocumentNode): ContentBlock {
     const id = createOpaqueId("block");
     switch (node.type) {
+      case "heading":
+        return {
+          id,
+          type: "heading",
+          level: node.depth ?? 1,
+          content: inlineFromEditor(node.children ?? [], book),
+          include_in_toc: true,
+          starts_page: false,
+          exclude_from_numbering: false,
+        };
       case "paragraph": {
         const content = inlineFromEditor(node.children ?? [], book);
         const image = content.length === 1 ? content[0] : undefined;
@@ -268,27 +280,31 @@ export function blockEditorText(
   block: ContentBlock | ListItem,
   book: Pick<BookDocument, "resources">,
 ): string {
-  if (!("type" in block))
-    return block.content
-      .map((child) => blockEditorText(child, book))
+  const nestedText = (children: readonly ContentBlock[]) =>
+    children
+      .map((child) =>
+        child.type === "heading"
+          ? "#".repeat(child.level) +
+            " " +
+            inlineEditorText(child.content, book)
+          : blockEditorText(child, book),
+      )
       .join("\n\n");
+  if (!("type" in block)) return nestedText(block.content);
   if (block.type === "heading" || block.type === "paragraph")
     return inlineEditorText(block.content, book);
   if (block.type === "table") return tableEditorHtml(block, book);
   if (block.type === "container")
-    return (
-      ":::" +
-      block.kind +
-      "\n" +
-      block.content.map((child) => blockEditorText(child, book)).join("\n\n") +
-      "\n:::"
-    );
-  if (block.type === "footnote")
-    return block.content
-      .map((child) => blockEditorText(child, book))
-      .join("\n\n");
+    return ":::" + block.kind + "\n" + nestedText(block.content) + "\n:::";
+  if (block.type === "footnote") return nestedText(block.content);
   function node(value: ContentBlock): TransientDocumentNode {
     switch (value.type) {
+      case "heading":
+        return {
+          type: "heading",
+          depth: value.level,
+          children: editorInlines(value.content, book),
+        };
       case "paragraph":
         return {
           type: "paragraph",

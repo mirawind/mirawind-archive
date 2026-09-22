@@ -135,7 +135,7 @@ test("retains paragraph typing while saving and preserves block identity", async
   });
   let hold = true;
   await page.route(
-    "**/api/manage/books/" + bookId + "/draft/blocks/" + blockId,
+    "**/api/manage/books/" + bookId + "/draft",
     async (route) => {
       const response = await route.fetch();
       if (hold && route.request().method() === "PATCH") {
@@ -148,7 +148,7 @@ test("retains paragraph typing while saving and preserves block identity", async
   const saving = page.waitForResponse(
     (response) =>
       response.request().method() === "PATCH" &&
-      response.url().includes("/draft/blocks/"),
+      response.url().endsWith("/draft"),
   );
   await dialog
     .getByRole("button", { name: "保存正文并更新预览", exact: true })

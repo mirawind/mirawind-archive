@@ -18,6 +18,112 @@ import {
 import { withMigratedTestDatabase } from "../../helpers/database";
 
 describe("transactional block documents", () => {
+  it("commits a heading, nested paragraph and metadata as one edit of their owning root", () =>
+    withMigratedTestDatabase(({ database }) => {
+      const id = new DraftRepository(database).createBook({
+        title: "Book",
+        nowMs: 1,
+      }).id;
+      const book = smallBook(id),
+        heading = headingBlock("Nested", 2),
+        paragraph = paragraphBlock("Original");
+      const root = {
+        id: createOpaqueId("block"),
+        type: "quote" as const,
+        content: [heading, paragraph],
+      };
+      book.blocks.push(root);
+      const documents = new DocumentRepository(database);
+      documents.insert(book);
+      database.exec(
+        "CREATE TABLE changed_blocks(id TEXT); CREATE TRIGGER record_block_update AFTER UPDATE ON book_blocks BEGIN INSERT INTO changed_blocks VALUES (NEW.id); END;",
+      );
+      const onChanged = vi.fn();
+      const result = documents.edit({
+        bookId: id,
+        expectedUpdatedAt: 1000,
+        nowMs: 1000,
+        requestId: "mixed_block_edit_000001",
+        onChanged,
+        patch: {
+          metadata: { title: "Revised book" },
+          numbering: "generated",
+          blocks: [
+            {
+              block_id: heading.id,
+              markdown: "Revised *heading*",
+              exclude_from_numbering: true,
+            },
+            { block_id: paragraph.id, markdown: "Revised **paragraph**" },
+          ],
+        },
+      });
+      expect(result).toEqual({ updated_at: 1001 });
+      expect(database.prepare("SELECT id FROM changed_blocks").all()).toEqual([
+        { id: root.id },
+      ]);
+      expect(onChanged).toHaveBeenCalledTimes(1);
+      expect(documents.block(id, heading.id).markdown).toBe(
+        "Revised *heading*",
+      );
+      expect(documents.block(id, paragraph.id).markdown).toBe(
+        "Revised **paragraph**",
+      );
+      expect(documents.read(id)).toMatchObject({
+        metadata: { title: "Revised book" },
+        publishing: { numbering: "generated" },
+        blocks: [
+          book.blocks[0],
+          book.blocks[1],
+          {
+            id: root.id,
+            content: [
+              { id: heading.id, exclude_from_numbering: true },
+              { id: paragraph.id },
+            ],
+          },
+        ],
+      });
+    }));
+
+  it("rejects an invalid heading batch without accepting its paragraph or header changes", () =>
+    withMigratedTestDatabase(({ database }) => {
+      const id = new DraftRepository(database).createBook({
+        title: "Book",
+        nowMs: 1,
+      }).id;
+      const book = smallBook(id),
+        documents = new DocumentRepository(database),
+        onChanged = vi.fn();
+      documents.insert(book);
+      expect(() =>
+        documents.edit({
+          bookId: id,
+          expectedUpdatedAt: 1000,
+          nowMs: 2000,
+          requestId: "invalid_batch_edit_0001",
+          onChanged,
+          patch: {
+            metadata: { title: "Rejected" },
+            blocks: [
+              { block_id: required(book.blocks[0]).id, level: 3 },
+              {
+                block_id: required(book.blocks[1]).id,
+                markdown: "Rejected paragraph",
+              },
+            ],
+          },
+        }),
+      ).toThrow();
+      expect(documents.read(id)).toEqual(book);
+      expect(onChanged).not.toHaveBeenCalled();
+      expect(
+        database
+          .prepare("SELECT count(*) AS count FROM document_commands")
+          .get(),
+      ).toEqual({ count: 0 });
+    }));
+
   it("exposes nested headings in document order and saves them without losing their container", () =>
     withMigratedTestDatabase(({ database }) => {
       const id = new DraftRepository(database).createBook({
@@ -42,10 +148,10 @@ describe("transactional block documents", () => {
         nowMs: 1000,
         requestId: "nested_heading_edit_01",
         patch: {
-          changes: [
+          blocks: [
             {
               block_id: nested.id,
-              title_markdown: "Revised",
+              markdown: "Revised",
               exclude_from_numbering: true,
             },
           ],
@@ -85,7 +191,7 @@ describe("transactional block documents", () => {
           expectedUpdatedAt: expected,
           nowMs: expected,
           requestId: createOpaqueId("job"),
-          patch: { block: { block_id: blockId, markdown } },
+          patch: { blocks: [{ block_id: blockId, markdown }] },
           onChanged() {},
         });
       expect(
@@ -123,10 +229,12 @@ describe("transactional block documents", () => {
           nowMs: expected,
           requestId: createOpaqueId("job"),
           patch: {
-            block: {
-              block_id: required(fixture.book.blocks[1]).id,
-              markdown: text,
-            },
+            blocks: [
+              {
+                block_id: required(fixture.book.blocks[1]).id,
+                markdown: text,
+              },
+            ],
           },
         });
       save(1000, "First edit");
@@ -193,7 +301,7 @@ describe("transactional block documents", () => {
         expectedUpdatedAt: 1000,
         nowMs: 900,
         requestId: "save_request_00000001",
-        patch: { block: { block_id: target.id, markdown: "Updated body" } },
+        patch: { blocks: [{ block_id: target.id, markdown: "Updated body" }] },
         onChanged,
       };
       expect(documents.edit(input)).toEqual({ updated_at: 1001 });
@@ -214,7 +322,7 @@ describe("transactional block documents", () => {
       expect(() =>
         documents.edit({
           ...input,
-          patch: { block: { block_id: target.id, markdown: "different" } },
+          patch: { blocks: [{ block_id: target.id, markdown: "different" }] },
         }),
       ).toThrow();
     }));

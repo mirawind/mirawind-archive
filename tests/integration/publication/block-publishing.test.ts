@@ -105,10 +105,12 @@ describe("block storage publication", () => {
         nowMs: Date.now(),
         patch: {
           numbering: "generated",
-          block: {
-            block_id: required(initial.blocks[3]).id,
-            markdown: `[Back](#${required(initial.blocks[0]).id})`,
-          },
+          blocks: [
+            {
+              block_id: required(initial.blocks[3]).id,
+              markdown: `[Back](#${required(initial.blocks[0]).id})`,
+            },
+          ],
         },
       });
       initial = documents.read(fixture.book.id);
@@ -146,10 +148,12 @@ describe("block storage publication", () => {
         database,
         expectedUpdatedAt: initial.updated_at,
         patch: {
-          block: {
-            block_id: required(initial.blocks[1]).id,
-            markdown: "Edited paragraph",
-          },
+          blocks: [
+            {
+              block_id: required(initial.blocks[1]).id,
+              markdown: "Edited paragraph",
+            },
+          ],
         },
         requestId: "save_request_00000001",
         nowMs: Date.now(),
@@ -230,7 +234,7 @@ describe("block storage publication", () => {
         requestId: "heading_number_change_001",
         nowMs: Date.now(),
         patch: {
-          changes: [
+          blocks: [
             {
               block_id: required(initial.blocks[0]).id,
               exclude_from_numbering: true,
@@ -247,10 +251,12 @@ describe("block storage publication", () => {
         requestId: "discard_preview_edit_001",
         nowMs: Date.now(),
         patch: {
-          block: {
-            block_id: required(initial.blocks[1]).id,
-            markdown: "Latest preview",
-          },
+          blocks: [
+            {
+              block_id: required(initial.blocks[1]).id,
+              markdown: "Latest preview",
+            },
+          ],
         },
       });
       const latest = await build();

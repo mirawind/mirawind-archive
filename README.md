@@ -120,7 +120,8 @@ MIRAWIND_REAL_FIXTURE_DIR="$PWD/tests/fixtures/mineru/real" pnpm test:e2e
 - [当前接口与历史规格索引](specs/README.md)
 
 SQLite 的 `book_documents` 和 `book_blocks` 是工作稿权威，`book_nodes` 定位嵌套块。
-普通正文编辑只读写所属根块，`updated_at` 是保存冲突标识。保存事务完成即返回成功，预览
+所有 block 编辑统一按 ID 读写所属根块；结构变化只补充读取标题上下文，元数据／编号模式
+不读取正文。`updated_at` 是保存冲突标识。保存事务完成即返回成功，预览
 在后台合并构建；未变化页面可以复用已验证 HTML。图片和原始 ZIP 每书只保存一份。
 `book.json` 仅存在于不可变构建快照中，预览与发布共用构建 ID；SQLite 的
 `current_version_id` 是唯一发布指针。旧数据库不得原地升级，D-141 使用获批的数据重置。

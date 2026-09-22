@@ -1,15 +1,15 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
-
 import schema from "@/schemas/book.schema.json" with { type: "json" };
 import { SafeApplicationError } from "@/domain/errors";
 import { hasControlCharacters } from "@/domain/text";
 import type {
   BookDocument,
   ContentBlock,
+  HeadingBlock,
   InlineNode,
   TableBlock,
 } from "./book-document.generated";
-import { contentEntries, inlineText } from "./content-tree";
+import { contentEntries, inlineText, type ContentEntry } from "./content-tree";
 
 export const contentLimits = Object.freeze({
   bytes: 256 * 1024 * 1024,
@@ -21,6 +21,15 @@ export const contentLimits = Object.freeze({
   blockBytes: 4 * 1024 * 1024,
 });
 export const maximumContentTimestamp = 8_640_000_000_000_000;
+export type DocumentHeader = Omit<BookDocument, "blocks">;
+export type HeadingStructure = Pick<
+  HeadingBlock,
+  "id" | "level" | "starts_page" | "alias"
+> & { readonly depth: number };
+export interface ContentPosition {
+  readonly rootOrdinal: number;
+  readonly nodeOrdinal: number;
+}
 const validator = new Ajv2020({
   strict: true,
   allErrors: false,
@@ -32,90 +41,22 @@ const validateSchema = validator.compile<BookDocument>(schema);
 const validateBlockSchema = validator.compile<ContentBlock>({
   $ref: schema.$id + "#/$defs/block",
 });
-
-// Heading edits need the ordered book context; ordinary roots can be checked in isolation.
-export function validateEditedRoot(
-  input: unknown,
-  resourceIds: ReadonlySet<string>,
-  externalKind: (id: string) => string | null,
-): ContentBlock {
-  inspectJson(input);
-  if (!validateBlockSchema(input)) invalid();
-  const entries = [...contentEntries([input])];
-  if (entries.length > contentLimits.blocks)
-    invalid("BOOK_DOCUMENT_LIMIT_EXCEEDED");
-  const kinds = new Map<string, string>();
-  for (const { node, kind, depth } of entries) {
-    if (
-      kinds.has(node.id) ||
-      externalKind(node.id) !== null ||
-      depth > contentLimits.blockDepth
-    )
-      invalid("BOOK_BLOCK_IDENTITY_INVALID");
-    if (kind === "heading")
-      invalid("BOOK_HEADING_REQUIRES_STRUCTURE_VALIDATION");
-    kinds.set(node.id, kind);
-    if ("type" in node && node.type === "table") validateTable(node);
-    if (
-      "type" in node &&
-      node.type === "list" &&
-      !node.ordered &&
-      node.start !== undefined
-    )
-      invalid("BOOK_LIST_START_INVALID");
-  }
-  const kindOf = (id: string) => kinds.get(id) ?? externalKind(id);
-  const inlines = (nodes: readonly InlineNode[]): void => {
-    for (const node of nodes) {
-      if (node.type === "image" && !resourceIds.has(node.resource_id))
-        invalid("BOOK_RESOURCE_MISSING");
-      if (
-        node.type === "footnote_reference" &&
-        kindOf(node.target_id) !== "footnote"
-      )
-        invalid("BOOK_FOOTNOTE_MISSING");
-      if (node.type === "link") {
-        if (
-          node.target.type === "block" &&
-          kindOf(node.target.block_id) === null
-        )
-          invalid("BOOK_LINK_MISSING");
-        if (
-          node.target.type === "resource" &&
-          !resourceIds.has(node.target.resource_id)
-        )
-          invalid("BOOK_RESOURCE_MISSING");
-        if (node.target.type === "external") {
-          let url: URL;
-          try {
-            url = new URL(node.target.url);
-          } catch {
-            invalid("BOOK_LINK_INVALID");
-          }
-          if (!["https:", "http:", "mailto:"].includes(url.protocol))
-            invalid("BOOK_LINK_INVALID");
-        }
-      }
-      if ("content" in node) inlines(node.content);
-    }
-  };
-  for (const { node } of entries) {
-    if (!("type" in node)) continue;
-    if (node.type === "paragraph") inlines(node.content);
-    if (node.type === "image" && !resourceIds.has(node.resource_id))
-      invalid("BOOK_RESOURCE_MISSING");
-    if ("caption" in node) inlines(node.caption ?? []);
-  }
-  return input;
-}
+const validateHeaderSchema = validator.compile<DocumentHeader>({
+  type: "object",
+  additionalProperties: false,
+  required: schema.required.filter((key) => key !== "blocks"),
+  properties: Object.fromEntries(
+    Object.entries(schema.properties).filter(([key]) => key !== "blocks"),
+  ),
+  $defs: schema.$defs,
+});
 
 function invalid(code = "BOOK_DOCUMENT_INVALID"): never {
   throw new SafeApplicationError(code, "The book document is invalid.", 400);
 }
-
 function inspectJson(input: unknown): void {
-  const stack = [{ value: input, depth: 0 }];
-  const seen = new WeakSet<object>();
+  const stack = [{ value: input, depth: 0 }],
+    seen = new WeakSet<object>();
   let count = 0;
   while (stack.length) {
     const entry = stack.pop();
@@ -141,7 +82,37 @@ function inspectJson(input: unknown): void {
       stack.push({ value: child, depth: entry.depth + 1 });
   }
 }
-
+function headerResources(input: DocumentHeader): ReadonlySet<string> {
+  const resources = new Set<string>(),
+    paths = new Set<string>();
+  for (const resource of input.resources) {
+    const components = resource.path.split("/");
+    if (
+      resources.has(resource.id) ||
+      paths.has(resource.path) ||
+      resource.path.includes("\\") ||
+      /^[A-Za-z]:/u.test(resource.path) ||
+      resource.path.normalize("NFC") !== resource.path ||
+      hasControlCharacters(resource.path) ||
+      components.some((part) => !part || part === "." || part === "..")
+    )
+      invalid("BOOK_RESOURCE_INVALID");
+    resources.add(resource.id);
+    paths.add(resource.path);
+  }
+  if (
+    input.metadata.cover_resource_id &&
+    !resources.has(input.metadata.cover_resource_id)
+  )
+    invalid("BOOK_RESOURCE_MISSING");
+  return resources;
+}
+export function validateDocumentHeader(input: unknown): DocumentHeader {
+  inspectJson(input);
+  if (!validateHeaderSchema(input)) invalid();
+  headerResources(input);
+  return input;
+}
 function validateTable(table: TableBlock): void {
   const occupied: number[] = [];
   let width: number | undefined;
@@ -166,99 +137,47 @@ function validateTable(table: TableBlock): void {
     if (column !== width) invalid("BOOK_TABLE_SHAPE_INVALID");
   }
 }
-
-export function validateBookDocument(
-  input: unknown,
-  expectedBookId?: number,
-): BookDocument {
-  inspectJson(input);
-  if (!validateSchema(input)) invalid();
-  if (expectedBookId !== undefined && input.book_id !== expectedBookId)
-    invalid("BOOK_DOCUMENT_OWNER_MISMATCH");
-  const entries = [...contentEntries(input.blocks)];
-  if (
-    input.blocks.length > contentLimits.topLevelBlocks ||
-    entries.length > contentLimits.blocks
-  )
+function validateEntries(
+  entries: readonly ContentEntry[],
+  resources: ReadonlySet<string>,
+  externalKind: (id: string) => string | null,
+): void {
+  if (entries.length > contentLimits.blocks)
     invalid("BOOK_DOCUMENT_LIMIT_EXCEEDED");
-  const ids = new Set<string>();
-  const resources = new Set<string>();
-  const paths = new Set<string>();
-  for (const resource of input.resources) {
-    const components = resource.path.split("/");
-    if (
-      resources.has(resource.id) ||
-      paths.has(resource.path) ||
-      resource.path.includes("\\") ||
-      /^[A-Za-z]:/u.test(resource.path) ||
-      resource.path.normalize("NFC") !== resource.path ||
-      hasControlCharacters(resource.path) ||
-      components.some((part) => !part || part === "." || part === "..")
-    )
-      invalid("BOOK_RESOURCE_INVALID");
-    resources.add(resource.id);
-    paths.add(resource.path);
-  }
-  if (
-    input.metadata.cover_resource_id &&
-    !resources.has(input.metadata.cover_resource_id)
-  )
-    invalid("BOOK_RESOURCE_MISSING");
-  const footnotes = new Set<string>();
-  const aliases = new Set<string>();
-  let previousLevel = 0;
+  const kinds = new Map<string, string>();
   for (const { node, kind, depth } of entries) {
-    if (ids.has(node.id) || depth > contentLimits.blockDepth)
-      invalid("BOOK_BLOCK_IDENTITY_INVALID");
-    ids.add(node.id);
-    if (kind === "footnote") footnotes.add(node.id);
-    if ("type" in node && node.type === "heading") {
-      if (
-        !inlineText(node.content).trim() ||
-        node.level > previousLevel + 1 ||
-        (node.starts_page && depth !== 0)
-      )
-        invalid("BOOK_HEADING_INVALID");
-      previousLevel = node.level;
-      if (node.alias) {
-        if (!node.starts_page || aliases.has(node.alias))
-          invalid("BOOK_PAGE_ALIAS_INVALID");
-        aliases.add(node.alias);
-      }
-    }
-    if ("type" in node && node.type === "table") validateTable(node);
     if (
-      "type" in node &&
-      node.type === "list" &&
-      !node.ordered &&
-      node.start !== undefined
+      kinds.has(node.id) ||
+      externalKind(node.id) !== null ||
+      depth > contentLimits.blockDepth
     )
+      invalid("BOOK_BLOCK_IDENTITY_INVALID");
+    kinds.set(node.id, kind);
+    if (!("type" in node)) continue;
+    if (node.type === "heading") {
+      if (!inlineText(node.content).trim() || (node.starts_page && depth !== 0))
+        invalid("BOOK_HEADING_INVALID");
+      if (node.alias && !node.starts_page) invalid("BOOK_PAGE_ALIAS_INVALID");
+    }
+    if (node.type === "table") validateTable(node);
+    if (node.type === "list" && !node.ordered && node.start !== undefined)
       invalid("BOOK_LIST_START_INVALID");
   }
-  const indexes = new Map(
-    entries.map((entry, index) => [entry.node.id, index]),
-  );
-  let boundaryIndex = -1;
-  const boundaries = input.publishing.boundaries;
-  for (const id of [
-    boundaries.body_start_block_id,
-    boundaries.appendix_start_block_id,
-    boundaries.backmatter_start_block_id,
-  ]) {
-    if (id === undefined) continue;
-    const index = indexes.get(id);
-    if (index === undefined || index <= boundaryIndex)
-      invalid("BOOK_BOUNDARY_INVALID");
-    boundaryIndex = index;
-  }
-  function checkInline(nodes: readonly InlineNode[]): void {
+  const kindOf = (id: string) => kinds.get(id) ?? externalKind(id);
+  const checkInline = (nodes: readonly InlineNode[]): void => {
     for (const node of nodes) {
       if (node.type === "image" && !resources.has(node.resource_id))
         invalid("BOOK_RESOURCE_MISSING");
-      if (node.type === "footnote_reference" && !footnotes.has(node.target_id))
+      if (
+        node.type === "footnote_reference" &&
+        kindOf(node.target_id) !== "footnote"
+      )
         invalid("BOOK_FOOTNOTE_MISSING");
       if (node.type === "link") {
-        if (node.target.type === "block" && !ids.has(node.target.block_id))
+        if (
+          node.target.type === "block" &&
+          kindOf(node.target.block_id) === null
+        )
           invalid("BOOK_LINK_MISSING");
         if (
           node.target.type === "resource" &&
@@ -278,7 +197,7 @@ export function validateBookDocument(
       }
       if ("content" in node) checkInline(node.content);
     }
-  }
+  };
   for (const { node } of entries) {
     if (!("type" in node)) continue;
     if (node.type === "heading" || node.type === "paragraph")
@@ -287,9 +206,102 @@ export function validateBookDocument(
       invalid("BOOK_RESOURCE_MISSING");
     if ("caption" in node) checkInline(node.caption ?? []);
   }
+}
+export function validateContentRoots(
+  roots: readonly ContentBlock[],
+  resources: ReadonlySet<string>,
+  externalKind: (id: string) => string | null,
+): void {
+  for (const root of roots) {
+    inspectJson(root);
+    if (!validateBlockSchema(root)) invalid();
+  }
+  validateEntries([...contentEntries(roots)], resources, externalKind);
+}
+export function headingStructures(
+  blocks: readonly ContentBlock[],
+): HeadingStructure[] {
+  return [...contentEntries(blocks)].flatMap(({ node, depth }) =>
+    "type" in node && node.type === "heading"
+      ? [
+          {
+            id: node.id,
+            level: node.level,
+            starts_page: node.starts_page,
+            ...(node.alias ? { alias: node.alias } : {}),
+            depth,
+          },
+        ]
+      : [],
+  );
+}
+export function validateHeadingSequence(
+  headings: readonly HeadingStructure[],
+): void {
+  let level = 0;
+  const aliases = new Set<string>();
+  for (const heading of headings) {
+    if (
+      heading.level > level + 1 ||
+      (heading.starts_page && heading.depth !== 0)
+    )
+      invalid("BOOK_HEADING_INVALID");
+    level = heading.level;
+    if (heading.alias) {
+      if (!heading.starts_page || aliases.has(heading.alias))
+        invalid("BOOK_PAGE_ALIAS_INVALID");
+      aliases.add(heading.alias);
+    }
+  }
+}
+export function validateContentBoundaries(
+  boundaries: BookDocument["publishing"]["boundaries"],
+  positionOf: (id: string) => ContentPosition | null,
+): void {
+  let previous: ContentPosition | undefined;
+  for (const id of [
+    boundaries.body_start_block_id,
+    boundaries.appendix_start_block_id,
+    boundaries.backmatter_start_block_id,
+  ]) {
+    if (id === undefined) continue;
+    const position = positionOf(id);
+    if (
+      !position ||
+      (previous &&
+        (position.rootOrdinal < previous.rootOrdinal ||
+          (position.rootOrdinal === previous.rootOrdinal &&
+            position.nodeOrdinal <= previous.nodeOrdinal)))
+    )
+      invalid("BOOK_BOUNDARY_INVALID");
+    previous = position;
+  }
+}
+export function validateBookDocument(
+  input: unknown,
+  expectedBookId?: number,
+): BookDocument {
+  inspectJson(input);
+  if (!validateSchema(input)) invalid();
+  if (expectedBookId !== undefined && input.book_id !== expectedBookId)
+    invalid("BOOK_DOCUMENT_OWNER_MISMATCH");
+  if (input.blocks.length > contentLimits.topLevelBlocks)
+    invalid("BOOK_DOCUMENT_LIMIT_EXCEEDED");
+  const entries = [...contentEntries(input.blocks)];
+  validateEntries(entries, headerResources(input), () => null);
+  validateHeadingSequence(headingStructures(input.blocks));
+  const positions = new Map(
+    entries.map((entry, index) => [
+      entry.node.id,
+      { rootOrdinal: entry.rootIndex, nodeOrdinal: index },
+    ]),
+  );
+  validateContentBoundaries(
+    input.publishing.boundaries,
+    (id) => positions.get(id) ?? null,
+  );
   return input;
 }
-
 export function nextContentTimestamp(previous: number, now: number): number {
   if (
     !Number.isSafeInteger(previous) ||
@@ -302,12 +314,21 @@ export function nextContentTimestamp(previous: number, now: number): number {
     invalid("BOOK_TIMESTAMP_INVALID");
   return Math.max(now, previous + 1);
 }
-
 export function serializeBookDocument(book: BookDocument): string {
-  return `${JSON.stringify({ schema_version: book.schema_version, book_id: book.book_id, updated_at: book.updated_at, ...(book.alias ? { alias: book.alias } : {}), metadata: book.metadata, publishing: book.publishing, blocks: book.blocks, resources: book.resources })}\n`;
+  return (
+    JSON.stringify({
+      schema_version: book.schema_version,
+      book_id: book.book_id,
+      updated_at: book.updated_at,
+      ...(book.alias ? { alias: book.alias } : {}),
+      metadata: book.metadata,
+      publishing: book.publishing,
+      blocks: book.blocks,
+      resources: book.resources,
+    }) + "\n"
+  );
 }
-
-function equalJson(left: unknown, right: unknown): boolean {
+export function equalJson(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (
     !left ||
@@ -317,11 +338,10 @@ function equalJson(left: unknown, right: unknown): boolean {
     Array.isArray(left) !== Array.isArray(right)
   )
     return false;
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
+  const keys = Object.keys(left);
   return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
+    keys.length === Object.keys(right).length &&
+    keys.every(
       (key) =>
         Object.hasOwn(right, key) &&
         equalJson(
@@ -330,41 +350,4 @@ function equalJson(left: unknown, right: unknown): boolean {
         ),
     )
   );
-}
-
-export function acceptBookChanges(
-  current: BookDocument,
-  proposed: BookDocument,
-  expectedUpdatedAt: number,
-  now: number,
-): BookDocument {
-  if (current.updated_at !== expectedUpdatedAt)
-    throw new SafeApplicationError(
-      "DRAFT_PRECONDITION_FAILED",
-      "The draft changed since it was read.",
-      412,
-    );
-  const next = validateBookDocument(
-    { ...proposed, updated_at: current.updated_at },
-    current.book_id,
-  );
-  if (equalJson(current, next)) return current;
-  return { ...next, updated_at: nextContentTimestamp(current.updated_at, now) };
-}
-
-export function replaceContentBlock(
-  book: BookDocument,
-  blockId: string,
-  replacement: ContentBlock,
-): BookDocument {
-  const next = structuredClone(book);
-  const entry = [...contentEntries(next.blocks)].find(
-    (value) => value.node.id === blockId,
-  );
-  if (!entry || !("type" in entry.node) || replacement.id !== blockId)
-    invalid("BOOK_BLOCK_NOT_FOUND");
-  for (const key of Object.keys(entry.node))
-    Reflect.deleteProperty(entry.node, key);
-  Object.assign(entry.node, replacement);
-  return next;
 }

@@ -1,6 +1,6 @@
 # Mirawind Publishing Architecture
 
-Authority: constitution 5.1.0 and D-141; import trust follows D-140.
+Authority: constitution 5.1.0 and D-141 through D-143; import trust follows D-140.
 See [Block Storage](block-storage.md), [IR](structured-content-ir.md) and the live management
 OpenAPI contract under specs/001-mineru-public-publishing/contracts/openapi.yaml.
 
@@ -33,6 +33,11 @@ Local typing and heading trials update browser state. Autosave batches input and
 typing when a submission completes. The server returns 200 after the transaction commits, without
 waiting for rendering. Same-book build requests are coalesced and obsolete running work canceled.
 A manual preview request flushes queued build delay without creating duplicate same-input work.
+
+Heading and body editors submit the same `blocks[]` batch to `PATCH /draft`. Publishing prepares
+changed roots and checks shared content rules; storage queries supply identities, references and
+heading context without a whole-book editing fallback. Metadata/settings can commit in the same
+batch. The block-specific route is read-only. See [Unified Block Editing](block-editing.md).
 
 Preview pages are addressed by build ID. Existing preview HTML can remain displayed while a new
 build runs, but stale previews cannot be published. Publication rechecks the document time and

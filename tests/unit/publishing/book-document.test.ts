@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   validateBookDocument,
   nextContentTimestamp,
-  acceptBookChanges,
 } from "../../../src/modules/publishing/core/content/book-document";
 import { presentBookHeadings } from "../../../src/modules/publishing/core/content/heading-presentation";
 import type {
@@ -92,25 +91,6 @@ describe("editable book content", () => {
     expect(nextContentTimestamp(1000, 900)).toBe(1001);
     expect(() => nextContentTimestamp(8640000000000000, 1)).toThrow();
     expect(() => nextContentTimestamp(1000, Number.NaN)).toThrow();
-  });
-
-  it("rejects stale saves and preserves time on a no-op", () => {
-    const current = book();
-    expect(() =>
-      acceptBookChanges(current, structuredClone(current), 999, 2000),
-    ).toThrow();
-    expect(
-      acceptBookChanges(current, structuredClone(current), 1000, 2000)
-        .updated_at,
-    ).toBe(1000);
-    const changed = structuredClone(current);
-    changed.metadata.title = "Edited";
-    const result = acceptBookChanges(current, changed, 1000, 900);
-    expect(result.updated_at).toBe(1001);
-    expect(result.blocks.map((block) => block.id)).toEqual(
-      current.blocks.map((block) => block.id),
-    );
-    expect(current.metadata.title).toBe("Book");
   });
 });
 

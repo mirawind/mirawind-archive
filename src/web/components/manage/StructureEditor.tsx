@@ -428,14 +428,16 @@ export const StructureEditor = forwardRef<
     if (!initial || JSON.stringify(initial) === JSON.stringify(node)) return [];
     const change: Record<string, unknown> = { block_id: node.block_id };
     for (const key of [
-      "display_level",
       "include_in_toc",
       "exclude_from_numbering",
       "starts_page",
-      "title_markdown",
     ] as const) {
       if (node[key] !== initial[key]) change[key] = node[key];
     }
+    if (node.display_level !== initial.display_level)
+      change.level = node.display_level;
+    if (node.title_markdown !== initial.title_markdown)
+      change.markdown = node.title_markdown;
     for (const key of ["alias", "source_number"] as const) {
       if (node[key] !== initial[key]) change[key] = node[key] ?? null;
     }
@@ -458,7 +460,7 @@ export const StructureEditor = forwardRef<
         body: JSON.stringify({
           expected_updated_at: props.updatedAt,
           ...(boundariesDirty ? { boundaries } : {}),
-          changes: dirtyChanges,
+          blocks: dirtyChanges,
           ...(numberingDirty ? { numbering: submittedNumbering } : {}),
         }),
         cache: "no-store",
@@ -469,7 +471,7 @@ export const StructureEditor = forwardRef<
             book: props.bookId,
             expected: props.updatedAt,
             boundaries,
-            changes: dirtyChanges,
+            blocks: dirtyChanges,
             numbering: submittedNumbering,
           }),
         },

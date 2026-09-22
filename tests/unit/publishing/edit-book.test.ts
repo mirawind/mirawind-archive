@@ -12,7 +12,7 @@ import {
   inlineEditorText,
   parseInlineEditorText,
 } from "@/modules/publishing/core/content/editor-text";
-import { editBookDocument } from "@/modules/publishing/core/content/edit-book";
+import { editDraftInMemory } from "../../helpers/document-edits";
 import { contentEntries } from "@/modules/publishing/core/content/content-tree";
 describe("structured block editing", () => {
   it("assigns new identities to inserted list items without shifting existing identities", () => {
@@ -37,9 +37,9 @@ describe("structured block editing", () => {
       items,
     };
     book.blocks.push(list);
-    const edited = editBookDocument(
+    const edited = editDraftInMemory(
       book,
-      { block: { block_id: list.id, markdown: "- New\n- Alpha\n- Beta" } },
+      { blocks: [{ block_id: list.id, markdown: "- New\n- Alpha\n- Beta" }] },
       1000,
       2000,
     );
@@ -74,14 +74,16 @@ describe("structured block editing", () => {
       ]),
     };
     book.blocks.push(table);
-    const edited = editBookDocument(
+    const edited = editDraftInMemory(
       book,
       {
-        block: {
-          block_id: table.id,
-          markdown:
-            "<table><tr><td>New</td></tr><tr><td>Alpha</td></tr><tr><td>Beta</td></tr></table>",
-        },
+        blocks: [
+          {
+            block_id: table.id,
+            markdown:
+              "<table><tr><td>New</td></tr><tr><td>Alpha</td></tr><tr><td>Beta</td></tr></table>",
+          },
+        ],
       },
       1000,
       2000,
@@ -168,10 +170,12 @@ describe("structured block editing", () => {
     };
     book.blocks.push(quote, table);
     for (const block of [quote, table]) {
-      const edited = editBookDocument(
+      const edited = editDraftInMemory(
         book,
         {
-          block: { block_id: block.id, markdown: blockEditorText(block, book) },
+          blocks: [
+            { block_id: block.id, markdown: blockEditorText(block, book) },
+          ],
         },
         book.updated_at,
         2000,
@@ -202,16 +206,18 @@ describe("structured block editing", () => {
       content: [table],
     };
     book.blocks.push(quote);
-    const edited = editBookDocument(
+    const edited = editDraftInMemory(
       book,
       {
-        block: {
-          block_id: quote.id,
-          markdown: blockEditorText(quote, book).replace(
-            "Old value",
-            "New value",
-          ),
-        },
+        blocks: [
+          {
+            block_id: quote.id,
+            markdown: blockEditorText(quote, book).replace(
+              "Old value",
+              "New value",
+            ),
+          },
+        ],
       },
       book.updated_at,
       2000,
@@ -247,9 +253,11 @@ describe("structured block editing", () => {
       "[link](#blk_missingmissingmissing000)",
     ])
       expect(() =>
-        editBookDocument(
+        editDraftInMemory(
           book,
-          { block: { block_id: required(book.blocks[1]).id, markdown: text } },
+          {
+            blocks: [{ block_id: required(book.blocks[1]).id, markdown: text }],
+          },
           1000,
           2000,
         ),

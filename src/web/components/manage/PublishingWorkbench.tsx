@@ -424,10 +424,15 @@ export function PublishingWorkbench(props: { readonly bookId: number }) {
       );
       try {
         const response = await fetch(
-          `/api/manage/books/${draft.book_id}/draft/blocks/${blockEditor.blockId}`,
+          `/api/manage/books/${draft.book_id}/draft`,
           {
             body: JSON.stringify({
-              markdown: blockEditor.markdown,
+              blocks: [
+                {
+                  block_id: blockEditor.blockId,
+                  markdown: blockEditor.markdown,
+                },
+              ],
               expected_updated_at: blockEditor.updatedAt,
             }),
             cache: "no-store",

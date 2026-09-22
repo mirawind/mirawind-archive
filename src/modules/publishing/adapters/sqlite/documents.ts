@@ -3,10 +3,8 @@ import type Database from "better-sqlite3";
 import { SafeApplicationError } from "@/domain/errors";
 import { withImmediateTransaction } from "@/platform/sqlite/immediate-transaction";
 import {
-  contentLimits,
   nextContentTimestamp,
   validateBookDocument,
-  validateEditedRoot,
 } from "../../core/content/book-document";
 import type {
   BookDocument,
@@ -14,12 +12,9 @@ import type {
   ListItem,
 } from "../../core/content/book-document.generated";
 import { contentEntries } from "../../core/content/content-tree";
-import {
-  editBookDocument,
-  applyBookEdit,
-  parseDraftEdit,
-  type DraftEdit,
-} from "../../core/content/edit-book";
+import { parseDraftEdit } from "../../core/content/edit-book";
+import { prepareDraftEdit } from "../../core/content/prepare-edit";
+import { documentEditContext } from "./document-edit-context";
 import {
   blockEditorText,
   inlineEditorText,
@@ -224,175 +219,24 @@ export class DocumentRepository {
       .deferred();
   }
 
-  private writeBlocks(
-    book: BookDocument,
-    previous: ReadonlyMap<string, string>,
-  ): void {
-    for (const [ordinal, block] of book.blocks.entries()) {
-      const json = JSON.stringify(block);
-      if (previous.get(block.id) === json) continue;
-      this.writeRoot(book.book_id, block, ordinal);
-    }
-  }
-
   private writeRoot(
     bookId: number,
-    block: ContentBlock,
+    root: DocumentRootRow,
     ordinal: number,
   ): void {
     this.database
       .prepare(
-        "INSERT INTO book_blocks(book_id,id,ordinal,type,content_json) VALUES (?,?,?,?,?) ON CONFLICT(book_id,id) DO UPDATE SET ordinal=excluded.ordinal,type=excluded.type,content_json=excluded.content_json",
+        "UPDATE book_blocks SET type=?,content_json=? WHERE book_id=? AND id=? AND ordinal=?",
       )
-      .run(bookId, block.id, ordinal, block.type, JSON.stringify(block));
+      .run(root.type, root.json, bookId, root.id, ordinal);
     this.database
       .prepare("DELETE FROM book_nodes WHERE book_id=? AND root_id=?")
-      .run(bookId, block.id);
+      .run(bookId, root.id);
     const insert = this.database.prepare(
       "INSERT INTO book_nodes(book_id,id,root_id,kind) VALUES (?,?,?,?)",
     );
-    for (const entry of contentEntries([block]))
-      insert.run(bookId, entry.node.id, block.id, entry.kind);
-  }
-
-  private prepareRootEdit(
-    bookId: number,
-    patch: DraftEdit,
-    expected: number,
-    now: number,
-  ) {
-    if (!patch.block || Object.keys(patch).length !== 1) return null;
-    const selected = patch.block;
-    const captured = this.database
-      .transaction(() => {
-        const header = this.header(bookId);
-        if (header.updated_at !== expected) conflict();
-        const row = this.database
-          .prepare(
-            "SELECT block.ordinal,block.content_json FROM book_nodes node JOIN book_blocks block ON block.book_id=node.book_id AND block.id=node.root_id WHERE node.book_id=? AND node.id=?",
-          )
-          .get(bookId, selected.block_id) as
-          { ordinal: number; content_json: string } | undefined;
-        if (!row) missing();
-        return {
-          header,
-          row,
-          root: JSON.parse(row.content_json) as ContentBlock,
-        };
-      })
-      .deferred();
-    const oldEntries = [...contentEntries([captured.root])];
-    if (oldEntries.some((entry) => entry.kind === "heading")) return null;
-    const proposed = applyBookEdit(
-      { ...captured.header, blocks: [captured.root] },
-      patch,
-    ).blocks[0];
-    if (!proposed) missing();
-    const entries = [...contentEntries([proposed])];
-    if (entries.some((entry) => entry.kind === "heading")) return null;
-    if (JSON.stringify(proposed) === captured.row.content_json)
-      return {
-        root: proposed,
-        ordinal: captured.row.ordinal,
-        updated_at: expected,
-        changed: false,
-      };
-    const lookup = this.database.prepare(
-      "SELECT kind FROM book_nodes WHERE book_id=? AND id=? AND root_id<>?",
-    );
-    const cache = new Map<string, string | null>();
-    validateEditedRoot(
-      proposed,
-      new Set(captured.header.resources.map((resource) => resource.id)),
-      (id) => {
-        if (!cache.has(id))
-          cache.set(
-            id,
-            (
-              lookup.get(bookId, id, captured.root.id) as
-                { kind: string } | undefined
-            )?.kind ?? null,
-          );
-        return cache.get(id) ?? null;
-      },
-    );
-    const total = this.database
-      .prepare("SELECT count(*) AS count FROM book_nodes WHERE book_id=?")
-      .get(bookId) as { count: number };
-    if (total.count - oldEntries.length + entries.length > contentLimits.blocks)
-      throw new SafeApplicationError(
-        "BOOK_DOCUMENT_LIMIT_EXCEEDED",
-        "The book exceeds the content limit.",
-        400,
-      );
-    const newKinds = new Map(
-      entries.map((entry) => [entry.node.id, entry.kind]),
-    );
-    const invalidated = oldEntries.flatMap((entry) =>
-      !newKinds.has(entry.node.id)
-        ? [{ id: entry.node.id, footnoteOnly: 0 }]
-        : entry.kind === "footnote" &&
-            newKinds.get(entry.node.id) !== "footnote"
-          ? [{ id: entry.node.id, footnoteOnly: 1 }]
-          : [],
-    );
-    if (
-      invalidated.length &&
-      this.database
-        .prepare(
-          "SELECT 1 FROM book_blocks block,json_tree(block.content_json) node,json_each(?) changed WHERE block.book_id=? AND block.id<>? AND node.value=json_extract(changed.value,'$.id') AND (node.key='target_id' OR (node.key='block_id' AND json_extract(changed.value,'$.footnoteOnly')=0)) LIMIT 1",
-        )
-        .get(JSON.stringify(invalidated), bookId, captured.root.id)
-    )
-      throw new SafeApplicationError(
-        "BOOK_LINK_MISSING",
-        "The edit would remove referenced content.",
-        400,
-      );
-    const localOrder = new Map(
-      entries.map((entry, index) => [entry.node.id, index]),
-    );
-    let previousRoot = -1,
-      previousLocal = -1;
-    for (const id of [
-      captured.header.publishing.boundaries.body_start_block_id,
-      captured.header.publishing.boundaries.appendix_start_block_id,
-      captured.header.publishing.boundaries.backmatter_start_block_id,
-    ]) {
-      if (!id) continue;
-      const local = localOrder.get(id);
-      const ordinal =
-        local !== undefined
-          ? captured.row.ordinal
-          : (
-              this.database
-                .prepare(
-                  "SELECT block.ordinal FROM book_nodes node JOIN book_blocks block ON block.book_id=node.book_id AND block.id=node.root_id WHERE node.book_id=? AND node.id=? AND node.root_id<>?",
-                )
-                .get(bookId, id, captured.root.id) as
-                { ordinal: number } | undefined
-            )?.ordinal;
-      if (
-        ordinal === undefined ||
-        ordinal < previousRoot ||
-        (ordinal === previousRoot &&
-          local !== undefined &&
-          local <= previousLocal)
-      )
-        throw new SafeApplicationError(
-          "BOOK_BOUNDARY_INVALID",
-          "The edit would invalidate a content boundary.",
-          400,
-        );
-      previousRoot = ordinal;
-      previousLocal = local ?? -1;
-    }
-    return {
-      root: proposed,
-      ordinal: captured.row.ordinal,
-      updated_at: nextContentTimestamp(expected, now),
-      changed: true,
-    };
+    for (const node of root.nodes)
+      insert.run(bookId, node.id, root.id, node.kind);
   }
 
   insert(input: BookDocument): void {
@@ -438,7 +282,7 @@ export class DocumentRepository {
     requestId: string;
     onChanged: (book: Pick<BookDocument, "book_id" | "updated_at">) => void;
   }) {
-    const patch: DraftEdit = parseDraftEdit(input.patch);
+    const patch = parseDraftEdit(input.patch);
     if (!/^[A-Za-z0-9_-]{16,100}$/.test(input.requestId))
       throw new SafeApplicationError(
         "DRAFT_REQUEST_INVALID",
@@ -465,39 +309,33 @@ export class DocumentRepository {
     };
     const accepted = receipt();
     if (accepted) return { updated_at: accepted.updated_at };
-    const rootEdit = this.prepareRootEdit(
-      input.bookId,
-      patch,
-      input.expectedUpdatedAt,
-      input.nowMs,
-    );
-    const current = rootEdit ? null : this.read(input.bookId);
-    let next: BookDocument | Pick<BookDocument, "book_id" | "updated_at">;
-    if (current)
-      next = editBookDocument(
-        current,
-        patch,
-        input.expectedUpdatedAt,
-        input.nowMs,
-      );
-    else if (rootEdit)
-      next = { book_id: input.bookId, updated_at: rootEdit.updated_at };
-    else throw new Error("DRAFT_EDIT_MISSING");
-    const previous = new Map(
-      current?.blocks.map((block) => [block.id, JSON.stringify(block)]) ?? [],
-    );
+    const prepared = this.database
+      .transaction(() => {
+        const header = this.header(input.bookId);
+        if (header.updated_at !== input.expectedUpdatedAt) conflict();
+        return prepareDraftEdit(
+          documentEditContext(this.database, header),
+          patch,
+        );
+      })
+      .deferred();
+    const next = {
+      ...prepared.header,
+      updated_at: prepared.changed
+        ? nextContentTimestamp(input.expectedUpdatedAt, input.nowMs)
+        : input.expectedUpdatedAt,
+    };
+    const roots = prepared.roots.map((root) => ({
+      ordinal: root.ordinal,
+      row: documentRootRow(root.block),
+    }));
     return withImmediateTransaction(this.database, () => {
       const prior = receipt();
       if (prior) return { updated_at: prior.updated_at };
       this.requireTimestamp(input.bookId, input.expectedUpdatedAt);
-      if (rootEdit?.changed) {
-        this.writeRoot(input.bookId, rootEdit.root, rootEdit.ordinal);
-        this.database
-          .prepare("UPDATE book_documents SET updated_at=? WHERE book_id=?")
-          .run(next.updated_at, input.bookId);
-        input.onChanged(next);
-      } else if (!rootEdit && next !== current && "blocks" in next) {
-        this.writeBlocks(next, previous);
+      if (prepared.changed) {
+        for (const root of roots)
+          this.writeRoot(input.bookId, root.row, root.ordinal);
         this.database
           .prepare(
             "UPDATE book_documents SET updated_at=?,alias=?,metadata_json=?,publishing_json=? WHERE book_id=?",
@@ -509,9 +347,10 @@ export class DocumentRepository {
             JSON.stringify(next.publishing),
             input.bookId,
           );
-        this.database
-          .prepare("UPDATE books SET title_cache=? WHERE id=?")
-          .run(next.metadata.title, input.bookId);
+        if (patch.metadata?.title !== undefined)
+          this.database
+            .prepare("UPDATE books SET title_cache=? WHERE id=?")
+            .run(next.metadata.title, input.bookId);
         input.onChanged(next);
       }
       this.database

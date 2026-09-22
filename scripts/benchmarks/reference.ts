@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 
 import { DocumentRepository } from "@/modules/publishing/adapters/sqlite/documents";
+import type { DraftEdit } from "@/modules/publishing/core/content/edit-book";
 import { saveDocument } from "@/modules/publishing/adapters/sqlite/save-document";
 import { createOpaqueId } from "@/domain/ids";
 import { normalizeSearchQuery } from "../../src/modules/reader/core/search-query.js";
@@ -329,6 +330,11 @@ function queueRebuild(databasePath: string): {
   readonly jobId: string;
   readonly versionId: string;
   readonly versionBefore: string;
+  readonly edit_probes: readonly {
+    readonly kind: string;
+    readonly duration_ms: number;
+    readonly roots_written: number;
+  }[];
   readonly save: {
     readonly duration_ms: number;
     readonly roots_written: number;
@@ -352,18 +358,133 @@ function queueRebuild(databasePath: string): {
     database.exec(
       "CREATE TEMP TABLE edited_roots(id TEXT); CREATE TEMP TRIGGER count_edited_roots AFTER UPDATE ON main.book_blocks BEGIN INSERT INTO edited_roots VALUES (NEW.id); END;",
     );
+    const headingId = database
+      .prepare(
+        "SELECT id FROM book_blocks WHERE book_id=? AND type='heading' ORDER BY ordinal LIMIT 1",
+      )
+      .pluck()
+      .get(book.id) as string | undefined;
+    if (!headingId) throw new Error("REFERENCE_HEADING_MISSING");
+    const heading = documents.block(book.id, headingId),
+      header = documents.header(book.id);
+    const probes: {
+      kind: string;
+      duration_ms: number;
+      roots_written: number;
+    }[] = [];
+    let expected = block.updated_at;
+    const probe = (
+      kind: string,
+      patch: DraftEdit,
+      restore: DraftEdit,
+      writes: number,
+    ) => {
+      database.exec("DELETE FROM edited_roots");
+      const started = performance.now();
+      const result = saveDocument({
+        database,
+        bookId: book.id,
+        expectedUpdatedAt: expected,
+        nowMs: Date.now(),
+        requestId: createOpaqueId("job"),
+        patch,
+      });
+      const duration_ms =
+        Math.round((performance.now() - started) * 1000) / 1000;
+      const roots_written = database
+        .prepare("SELECT count(*) FROM edited_roots")
+        .pluck()
+        .get() as number;
+      if (roots_written !== writes)
+        throw new Error("REFERENCE_EDIT_WRITE_SCOPE_INVALID");
+      probes.push({ kind, duration_ms, roots_written });
+      expected = saveDocument({
+        database,
+        bookId: book.id,
+        expectedUpdatedAt: result.updated_at,
+        nowMs: Date.now(),
+        requestId: createOpaqueId("job"),
+        patch: restore,
+      }).updated_at;
+    };
+    probe(
+      "metadata",
+      { metadata: { title: "Benchmark title" } },
+      { metadata: { title: header.metadata.title } },
+      0,
+    );
+    probe(
+      "heading",
+      { blocks: [{ block_id: headingId, markdown: "Benchmark heading" }] },
+      { blocks: [{ block_id: headingId, markdown: heading.markdown }] },
+      1,
+    );
+    probe(
+      "numbering",
+      { numbering: header.publishing.numbering === "none" ? "source" : "none" },
+      { numbering: header.publishing.numbering },
+      0,
+    );
+    const headingSettings = database
+      .prepare(
+        "SELECT json_extract(content_json,'$.starts_page') AS starts_page,json_extract(content_json,'$.alias') AS alias FROM book_blocks WHERE book_id=? AND id=?",
+      )
+      .get(book.id, headingId) as { starts_page: number; alias: string | null };
+    probe(
+      "structure",
+      {
+        blocks: [
+          {
+            block_id: headingId,
+            starts_page: !headingSettings.starts_page,
+            alias: null,
+          },
+        ],
+      },
+      {
+        blocks: [
+          {
+            block_id: headingId,
+            starts_page: Boolean(headingSettings.starts_page),
+            alias: headingSettings.alias,
+          },
+        ],
+      },
+      1,
+    );
+    probe(
+      "mixed",
+      {
+        metadata: { title: "Benchmark title" },
+        blocks: [
+          { block_id: headingId, markdown: "Benchmark heading" },
+          { block_id: target.id, markdown: "Benchmark paragraph" },
+        ],
+      },
+      {
+        metadata: { title: header.metadata.title },
+        blocks: [
+          { block_id: headingId, markdown: heading.markdown },
+          { block_id: target.id, markdown: block.markdown },
+        ],
+      },
+      2,
+    );
+    database.exec("DELETE FROM edited_roots");
     const started = performance.now();
     saveDocument({
       database,
       bookId: book.id,
-      expectedUpdatedAt: block.updated_at,
+      expectedUpdatedAt: expected,
       nowMs: Date.now(),
       requestId: createOpaqueId("job"),
       patch: {
-        block: {
-          block_id: target.id,
-          markdown: block.markdown + " (benchmark edit)",
-        },
+        blocks: [
+          {
+            block_id: target.id,
+            markdown: block.markdown + " (benchmark edit)",
+          },
+        ],
       },
     });
     const durationMs = performance.now() - started;
@@ -384,6 +505,7 @@ function queueRebuild(databasePath: string): {
       jobId: candidate.jobId,
       versionId: candidate.id,
       versionBefore: book.currentVersionId,
+      edit_probes: probes,
       save: {
         duration_ms: Math.round(durationMs * 1000) / 1000,
         roots_written: written.count,
@@ -509,6 +631,7 @@ export async function benchmarkFixtureHttp(input: {
     }
     return Object.freeze({
       save: rebuild.save,
+      edit_probes: rebuild.edit_probes,
       rebuild_ms:
         completed.finishedAtMs !== null && completed.startedAtMs !== null
           ? completed.finishedAtMs - completed.startedAtMs
@@ -649,6 +772,15 @@ export async function runReferenceBenchmark(
         fixture_id: fixtureId,
         ...http,
       }),
+    );
+    process.stderr.write(
+      JSON.stringify({
+        fixtureId,
+        phase: "edit-and-read",
+        status: http.status,
+        completed: httpResults.length,
+        total: buildResults.length,
+      }) + "\n",
     );
   }
   const failed = httpResults.some((result) => result.status !== "passed");

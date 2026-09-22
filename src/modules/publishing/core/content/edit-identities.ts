@@ -142,6 +142,8 @@ export function retainEditedBlock(
     return { ...next, id: previous.id };
   }
   const result = { ...previous, ...next, id: previous.id } as ContentBlock;
+  if (previous.type === "heading" && next.type === "heading")
+    return { ...previous, content: next.content, level: next.level };
   if (previous.type === "list" && result.type === "list") {
     result.items = align(previous.items, result.items, retainItem);
     if (!result.ordered) delete result.start;

@@ -3,17 +3,16 @@ import { isOpaqueId } from "@/domain/ids";
 import type {
   BookDocument,
   BookMetadata,
-  HeadingBlock,
+  ContentBlock,
   ListItem,
 } from "./book-document.generated";
-import { contentById } from "./content-tree";
+import { contentEntries } from "./content-tree";
 import { parseBlockEditorText, parseInlineEditorText } from "./editor-text";
-import { acceptBookChanges } from "./book-document";
 
-export interface HeadingEdit {
+export interface BlockEdit {
   readonly block_id: string;
-  readonly display_level?: number;
-  readonly title_markdown?: string;
+  readonly level?: number;
+  readonly markdown?: string;
   readonly source_number?: string | null;
   readonly include_in_toc?: boolean;
   readonly starts_page?: boolean;
@@ -31,8 +30,7 @@ export interface DraftEdit {
     readonly appendix_start_block_id?: string | null;
     readonly backmatter_start_block_id?: string | null;
   };
-  readonly changes?: readonly HeadingEdit[];
-  readonly block?: { readonly block_id: string; readonly markdown: string };
+  readonly blocks?: readonly BlockEdit[];
 }
 function invalid(): never {
   throw new SafeApplicationError(
@@ -51,14 +49,9 @@ export function parseDraftEdit(value: unknown): DraftEdit {
   if (
     Object.keys(patch).some(
       (key) =>
-        ![
-          "alias",
-          "metadata",
-          "numbering",
-          "boundaries",
-          "changes",
-          "block",
-        ].includes(key),
+        !["alias", "metadata", "numbering", "boundaries", "blocks"].includes(
+          key,
+        ),
     )
   )
     invalid();
@@ -141,11 +134,10 @@ export function parseDraftEdit(value: unknown): DraftEdit {
         invalid();
     }
   }
-  if (patch.changes !== undefined) {
-    if (!Array.isArray(patch.changes) || patch.changes.length > 20000)
-      invalid();
+  if (patch.blocks !== undefined) {
+    if (!Array.isArray(patch.blocks) || patch.blocks.length > 20000) invalid();
     const ids = new Set<string>();
-    for (const item of patch.changes) {
+    for (const item of patch.blocks) {
       const change = object(item);
       if (
         typeof change.block_id !== "string" ||
@@ -156,7 +148,7 @@ export function parseDraftEdit(value: unknown): DraftEdit {
       ids.add(change.block_id);
       for (const [key, value] of Object.entries(change)) {
         if (key === "block_id") continue;
-        if (key === "display_level") {
+        if (key === "level") {
           if (
             !Number.isSafeInteger(value) ||
             Number(value) < 1 ||
@@ -169,8 +161,11 @@ export function parseDraftEdit(value: unknown): DraftEdit {
           )
         ) {
           if (typeof value !== "boolean") invalid();
-        } else if (key === "title_markdown") {
-          if (typeof value !== "string" || !value.trim() || value.length > 2000)
+        } else if (key === "markdown") {
+          if (
+            typeof value !== "string" ||
+            Buffer.byteLength(value) > 4 * 1024 * 1024
+          )
             invalid();
         } else if (key === "source_number" || key === "alias") {
           if (
@@ -182,38 +177,13 @@ export function parseDraftEdit(value: unknown): DraftEdit {
       }
     }
   }
-  if (patch.block !== undefined) {
-    const block = object(patch.block);
-    if (
-      Object.keys(block).length !== 2 ||
-      typeof block.block_id !== "string" ||
-      !isOpaqueId("block", block.block_id) ||
-      typeof block.markdown !== "string" ||
-      Buffer.byteLength(block.markdown) > 4 * 1024 * 1024
-    )
-      invalid();
-  }
   return patch as DraftEdit;
 }
 
-export function editBookDocument(
-  current: BookDocument,
+export function applyHeaderEdit(
+  current: Omit<BookDocument, "blocks">,
   patch: DraftEdit,
-  expectedUpdatedAt: number,
-  nowMs: number,
-): BookDocument {
-  return acceptBookChanges(
-    current,
-    applyBookEdit(current, patch),
-    expectedUpdatedAt,
-    nowMs,
-  );
-}
-
-export function applyBookEdit(
-  current: BookDocument,
-  patch: DraftEdit,
-): BookDocument {
+): Omit<BookDocument, "blocks"> {
   const next = structuredClone(current);
   if (patch.alias === null) delete next.alias;
   else if (patch.alias !== undefined) next.alias = patch.alias;
@@ -227,37 +197,71 @@ export function applyBookEdit(
     if (value === null) Reflect.deleteProperty(next.publishing.boundaries, key);
     else Reflect.set(next.publishing.boundaries, key, value);
   }
-  const entries = contentById(next);
-  for (const edit of patch.changes ?? []) {
-    const entry = entries.get(edit.block_id);
-    if (!entry || !("type" in entry.node) || entry.node.type !== "heading")
-      invalid();
-    const heading: HeadingBlock = entry.node;
-    if (edit.display_level !== undefined) heading.level = edit.display_level;
-    if (edit.title_markdown !== undefined)
-      heading.content = parseInlineEditorText(edit.title_markdown, next);
-    for (const key of [
-      "include_in_toc",
-      "starts_page",
-      "exclude_from_numbering",
-    ] as const)
-      if (edit[key] !== undefined) heading[key] = edit[key];
-    for (const key of ["source_number", "alias"] as const) {
-      if (edit[key] === null) Reflect.deleteProperty(heading, key);
-      else if (edit[key] !== undefined) heading[key] = edit[key];
-    }
+  return next;
+}
+
+export function applyRootEdits(
+  root: ContentBlock,
+  edits: readonly BlockEdit[],
+  book: Pick<BookDocument, "resources">,
+): ContentBlock {
+  const next = structuredClone(root);
+  const entries = new Map(
+    [...contentEntries([next])].map((entry) => [entry.node.id, entry.node]),
+  );
+  const targets = new Set(edits.map((edit) => edit.block_id));
+  for (const edit of edits) {
+    const node = entries.get(edit.block_id);
+    if (!node) invalid();
+    const nested =
+      "type" in node
+        ? [...contentEntries([node])]
+        : [...contentEntries(node.content)];
+    if (
+      nested.some(
+        (entry) => entry.node.id !== node.id && targets.has(entry.node.id),
+      )
+    )
+      throw new SafeApplicationError(
+        "BLOCK_EDIT_OVERLAP",
+        "A batch cannot edit both a container and its descendants.",
+        400,
+      );
   }
-  if (patch.block) {
-    const entry = entries.get(patch.block.block_id);
-    if (!entry || ("type" in entry.node && entry.node.type === "heading"))
+  for (const edit of edits) {
+    const previous = entries.get(edit.block_id);
+    if (!previous) invalid();
+    const heading = "type" in previous && previous.type === "heading";
+    if (
+      !heading &&
+      Object.keys(edit).some((key) => key !== "block_id" && key !== "markdown")
+    )
       invalid();
-    const previous = entry.node;
+    if (heading) {
+      if (edit.markdown !== undefined) {
+        if (!edit.markdown.trim() || edit.markdown.length > 2000) invalid();
+        previous.content = parseInlineEditorText(edit.markdown, book);
+      }
+      for (const key of [
+        "level",
+        "include_in_toc",
+        "starts_page",
+        "exclude_from_numbering",
+      ] as const)
+        if (edit[key] !== undefined) Reflect.set(previous, key, edit[key]);
+      for (const key of ["source_number", "alias"] as const) {
+        if (edit[key] === null) Reflect.deleteProperty(previous, key);
+        else if (edit[key] !== undefined) previous[key] = edit[key];
+      }
+      continue;
+    }
+    if (edit.markdown === undefined) continue;
     if (!("type" in previous) || previous.type === "footnote") {
-      const quoted = patch.block.markdown
+      const quoted = edit.markdown
         .split("\n")
         .map((line) => "> " + line)
         .join("\n");
-      const replacement = parseBlockEditorText(quoted, next, {
+      const replacement = parseBlockEditorText(quoted, book, {
         id: previous.id,
         type: "quote",
         content: previous.content,
@@ -265,11 +269,7 @@ export function applyBookEdit(
       if (replacement.type !== "quote") invalid();
       (previous as ListItem).content = replacement.content;
     } else {
-      const replacement = parseBlockEditorText(
-        patch.block.markdown,
-        next,
-        previous,
-      );
+      const replacement = parseBlockEditorText(edit.markdown, book, previous);
       if (replacement !== previous) {
         for (const key of Object.keys(previous))
           Reflect.deleteProperty(previous, key);

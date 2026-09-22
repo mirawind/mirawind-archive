@@ -1,14 +1,11 @@
 openapi: 3.1.0
 info:
   title: Mirawind MinerU Publishing API
-  version: 3.1.0
+  version: 4.0.0
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
-  description:
-    Single MinerU content-list v2 ZIP ingestion into editable IR v1, timestamped saves and
-    build-bound publication. Management responses require the sole administrator and prohibit
-    caching and indexing. Better Auth owns its authentication protocol endpoints.
+  description: Single MinerU content-list v2 ZIP ingestion into editable IR v1, timestamped saves and build-bound publication. Management responses require the sole administrator and prohibit caching and indexing. Better Auth owns its authentication protocol endpoints.
 servers:
   - url: https://library.example.test
 tags:
@@ -518,44 +515,6 @@ paths:
                     - source
                     - generated
                     - none
-                changes:
-                  type: array
-                  maxItems: 20000
-                  items:
-                    type: object
-                    additionalProperties: false
-                    required:
-                      - block_id
-                    properties:
-                      alias:
-                        oneOf:
-                          - type: string
-                            pattern: ^(?![0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$
-                            maxLength: 120
-                          - type: "null"
-                      block_id:
-                        type: string
-                        pattern: ^blk_[A-Za-z0-9_-]{16,80}$
-                      display_level:
-                        type: integer
-                        minimum: 1
-                        maximum: 4
-                      include_in_toc:
-                        type: boolean
-                      source_number:
-                        oneOf:
-                          - type: string
-                            minLength: 1
-                            maxLength: 100
-                          - type: "null"
-                      starts_page:
-                        type: boolean
-                      title_markdown:
-                        type: string
-                        minLength: 1
-                        maxLength: 2000
-                      exclude_from_numbering:
-                        type: boolean
                 metadata:
                   type: object
                   additionalProperties: false
@@ -634,19 +593,44 @@ paths:
                   type: integer
                   minimum: 0
                   maximum: 8640000000000000
-                block:
-                  type: object
-                  additionalProperties: false
-                  required:
-                    - block_id
-                    - markdown
-                  properties:
-                    block_id:
-                      type: string
-                      pattern: ^blk_[A-Za-z0-9_-]{16,80}$
-                    markdown:
-                      type: string
-                      maxLength: 4194304
+                blocks:
+                  type: array
+                  maxItems: 20000
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - block_id
+                    properties:
+                      alias:
+                        oneOf:
+                          - type: string
+                            pattern: ^(?![0-9]+$)[a-z0-9]+(?:-[a-z0-9]+)*$
+                            maxLength: 120
+                          - type: "null"
+                      block_id:
+                        type: string
+                        pattern: ^blk_[A-Za-z0-9_-]{16,80}$
+                      include_in_toc:
+                        type: boolean
+                      source_number:
+                        oneOf:
+                          - type: string
+                            minLength: 1
+                            maxLength: 100
+                          - type: "null"
+                      starts_page:
+                        type: boolean
+                      exclude_from_numbering:
+                        type: boolean
+                      level:
+                        type: integer
+                        minimum: 1
+                        maximum: 4
+                      markdown:
+                        type: string
+                        maxLength: 4194304
+                        description: Local editing syntax for the target block. Heading text is limited to 2000 characters; heading-only properties require a heading block.
       responses:
         "200":
           description: The structured draft has been committed. Preview construction is independent.
@@ -658,15 +642,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: false
-                required:
-                  - updated_at
-                properties:
-                  updated_at: &a1
-                    type: integer
-                    minimum: 0
-                    maximum: 8640000000000000
+                $ref: "#/components/schemas/DraftUpdateAccepted"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -688,6 +664,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+      description: Commits a batch of block edits and optional metadata/settings atomically. All block types use blocks[]; duplicate IDs and overlapping parent/child edits are rejected. Responses require administrator authorization and are neither cached nor indexed.
   /api/manage/books/{bookId}/build:
     post:
       tags:
@@ -754,10 +731,7 @@ paths:
         - Drafts
       operationId: publishBook
       summary: Publish the current ready build
-      description:
-        Promotes only the submitted current ready build. Mismatched source timestamps, failed
-        builds and blocking diagnostics prevent publication. Published content and book
-        access remain unchanged on failure.
+      description: Promotes only the submitted current ready build. Mismatched source timestamps, failed builds and blocking diagnostics prevent publication. Published content and book access remain unchanged on failure.
       security:
         - cookieAuth: []
       parameters:
@@ -1079,83 +1053,6 @@ paths:
                     maxLength: 4194304
         "404":
           $ref: "#/components/responses/HiddenOrMissingJson"
-    patch:
-      tags:
-        - Drafts
-      operationId: saveDraftBlock
-      summary: Queue a timestamp-checked block edit
-      security:
-        - cookieAuth: []
-      parameters:
-        - $ref: "#/components/parameters/BookId"
-        - $ref: "#/components/parameters/Origin"
-        - $ref: "#/components/parameters/BlockId"
-        - name: Idempotency-Key
-          in: header
-          required: true
-          schema:
-            type: string
-            pattern: ^[A-Za-z0-9_-]{16,100}$
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-                - expected_updated_at
-                - markdown
-              properties:
-                expected_updated_at:
-                  type: integer
-                  minimum: 0
-                  maximum: 8640000000000000
-                markdown:
-                  type: string
-                  maxLength: 4194304
-      responses:
-        "200":
-          description: The structured draft has been committed. Preview construction is independent.
-          headers:
-            Cache-Control:
-              schema:
-                type: string
-                const: private, no-store
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                  - updated_at
-                  - selected_block_id
-                properties:
-                  updated_at: *a1
-                  selected_block_id:
-                    type: string
-                    pattern: ^blk_[A-Za-z0-9_-]{16,80}$
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFoundJson"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "412":
-          description: The expected_updated_at value is stale; local changes must be retained.
-          headers:
-            Cache-Control:
-              schema:
-                type: string
-                const: private, no-store
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
   /api/manage/books/{bookId}/draft/cover:
     post:
       tags:
@@ -1201,7 +1098,10 @@ paths:
                   - updated_at
                   - resource_id
                 properties:
-                  updated_at: *a1
+                  updated_at:
+                    type: integer
+                    minimum: 0
+                    maximum: 8640000000000000
                   resource_id:
                     type: string
                     pattern: ^res_[A-Za-z0-9_-]{16,80}$
@@ -1239,9 +1139,7 @@ components:
       type: apiKey
       in: query
       name: authorization
-      description:
-        Time-limited HMAC authorization bound to the active administrator session, book,
-        build and resource.
+      description: Time-limited HMAC authorization bound to the active administrator session, book, build and resource.
   parameters:
     BookKey:
       name: bookKey
@@ -1395,9 +1293,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Forbidden:
-      description:
-        Valid session is not the sole administrator or the required 300-second
-        freshness/password reauthentication policy is not satisfied
+      description: Valid session is not the sole administrator or the required 300-second freshness/password reauthentication policy is not satisfied
       headers:
         Cache-Control:
           schema:
@@ -2053,7 +1949,10 @@ components:
                     - failed
                     - canceled
                     - interrupted
-                source_updated_at: *a1
+                source_updated_at:
+                  type: integer
+                  minimum: 0
+                  maximum: 8640000000000000
                 safe_error_code:
                   type:
                     - string
@@ -2065,7 +1964,10 @@ components:
       required:
         - updated_at
       properties:
-        updated_at: *a1
+        updated_at:
+          type: integer
+          minimum: 0
+          maximum: 8640000000000000
     Job:
       type: object
       additionalProperties: false

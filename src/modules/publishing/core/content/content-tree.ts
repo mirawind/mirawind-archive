@@ -1,5 +1,4 @@
 import type {
-  BookDocument,
   ContentBlock,
   InlineNode,
   ListItem,
@@ -105,12 +104,4 @@ export function blockText(block: ContentBlock | ListItem): string {
     default:
       return block.content.map(blockText).join("\n");
   }
-}
-
-export function contentById(
-  book: BookDocument,
-): ReadonlyMap<string, ContentEntry> {
-  return new Map(
-    [...contentEntries(book.blocks)].map((entry) => [entry.node.id, entry]),
-  );
 }
